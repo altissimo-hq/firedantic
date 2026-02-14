@@ -2,13 +2,15 @@
 name = "firedantic"
 version = "0.13.0"
 description = "Pydantic base models for Firestore"
-authors = ["IOXIO Ltd"]
+authors = [
+    "IOXIO Ltd",
+    "Marissa Fisher <mfisher29@users.noreply.github.com>",
+    "Altissimo HQ",
+]
 license = "BSD-3-Clause"
 readme = "README.md"
-repository = "https://github.com/ioxiocom/firedantic"
-packages = [
-    {include="firedantic", from="."}
-]
+repository = "https://github.com/altissimo-hq/firedantic"
+packages = [{ include = "firedantic", from = "." }]
 
 [tool.poetry.dependencies]
 python = "^3.10"
@@ -21,15 +23,15 @@ report_only = false
 sources = ["pyup", "gemnasium"]
 
 [tool.poetry.group.dev.dependencies]
-isort = "^5.12.0"
-invoke = "^2.2.0"
-mypy = "^1.15.0"
+black = "^25.1.0"
 flake8 = "^7.1.2"
+invoke = "^2.2.0"
+isort = "^5.12.0"
+mypy = "^1.15.0"
 pytest = "^8.3.4"
 pytest-asyncio = "^0.25.3"
-black = "^25.1.0"
-watchdog = "^6.0.0"
 pytest-cov = "^7.0.0"
+watchdog = "^6.0.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

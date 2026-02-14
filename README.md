@@ -6,6 +6,8 @@
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/firedantic)](https://pypi.org/project/firedantic/)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
+> **About this fork:** This is the actively maintained fork of firedantic under altissimo-hq. The original upstream repository ([ioxiocom/firedantic](https://github.com/ioxiocom/firedantic)) has no active maintainer as of January 2026. This fork includes Marissa Fisher's (@mfisher29) comprehensive multi-configuration support (v0.13.0) and will continue to receive updates, bug fixes, and new features.
+
 Database models for Firestore using Pydantic base models.
 
 ## Installation
