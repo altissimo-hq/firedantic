@@ -14,6 +14,7 @@ Run with a running Firestore emulator:
 export FIRESTORE_EMULATOR_HOST="127.0.0.1:8686"
 python test_integration_all.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -228,9 +229,7 @@ def test_legacy_config_sync_flow():
 async def test_new_config_async_flow():
     info("\n=== new Configuration API: async flow ===")
     mock_creds = Mock(spec=google.auth.credentials.Credentials)
-    configuration.add(
-        prefix="integ-async-", project="test-project", credentials=mock_creds
-    )
+    configuration.add(prefix="integ-async-", project="test-project", credentials=mock_creds)
 
     class Owner(AsyncModel):
         first_name: str
@@ -254,9 +253,7 @@ async def test_new_config_async_flow():
     assert_or_exit(c.owner.first_name == "Alice", "async owner first name mismatch")
 
     found = await Company.find({"company_id": "A-1"})
-    assert_or_exit(
-        len(found) >= 1 and found[0].company_id == "A-1", "async find failed"
-    )
+    assert_or_exit(len(found) >= 1 and found[0].company_id == "A-1", "async find failed")
 
     await c.delete()
     remains = await Company.find({"company_id": "A-1"})
@@ -333,9 +330,7 @@ def test_subcollections_and_model_for():
     s.save()
     # find back
     found = StatsCollection.find({"purchases": 3})
-    assert_or_exit(
-        any(x.purchases == 3 for x in found), "subcollection save/find failed"
-    )
+    assert_or_exit(any(x.purchases == 3 for x in found), "subcollection save/find failed")
     # cleanup
     for x in StatsCollection.find({}):
         x.delete()
@@ -441,9 +436,7 @@ def test_multi_config_usage():
     mock_creds = Mock(spec=google.auth.credentials.Credentials)
 
     # default config
-    configuration.add(
-        prefix="multi-default-", project="proj-default", credentials=mock_creds
-    )
+    configuration.add(prefix="multi-default-", project="proj-default", credentials=mock_creds)
 
     # billing config
     configuration.add(
@@ -482,12 +475,8 @@ def test_multi_config_usage():
     # find calls (default vs billing)
     found_default = CompanyDefault.find({"company_id": "MD-1"})
     found_billing = BillingAccount.find({"billing_id": "B-1"})
-    assert_or_exit(
-        any(x.company_id == "MD-1" for x in found_default), "find default failed"
-    )
-    assert_or_exit(
-        any(x.billing_id == "B-1" for x in found_billing), "find billing failed"
-    )
+    assert_or_exit(any(x.company_id == "MD-1" for x in found_default), "find default failed")
+    assert_or_exit(any(x.billing_id == "B-1" for x in found_billing), "find billing failed")
 
     # cleanup
     cleanup_sync_collection_by_model(CompanyDefault)

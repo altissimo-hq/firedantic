@@ -218,9 +218,7 @@ async def test_existing_indexes_are_skipped(mock_admin_client) -> None:
             ]
         }
     )
-    mock_admin_client.list_indexes = AsyncMock(
-        return_value=MockListIndexOperation([resp])
-    )
+    mock_admin_client.list_indexes = AsyncMock(return_value=MockListIndexOperation([resp]))
 
     class ModelWithIndexes(BaseModelWithIndexes):
         __composite_indexes__ = (
@@ -269,9 +267,7 @@ async def test_same_fields_in_another_collection(mock_admin_client) -> None:
             ]
         }
     )
-    mock_admin_client.list_indexes = AsyncMock(
-        return_value=MockListIndexOperation([resp])
-    )
+    mock_admin_client.list_indexes = AsyncMock(return_value=MockListIndexOperation([resp]))
 
     class ModelWithIndexes(BaseModelWithIndexes):
         __composite_indexes__ = (

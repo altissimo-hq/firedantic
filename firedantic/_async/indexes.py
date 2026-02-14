@@ -71,8 +71,7 @@ async def create_composite_index(
                 {
                     "query_scope": index.query_scope,
                     "fields": [
-                        {"field_path": field[0], "order": field[1]}
-                        for field in list(index.fields)
+                        {"field_path": field[0], "order": field[1]} for field in list(index.fields)
                     ],
                 }
             ),
@@ -111,9 +110,7 @@ async def set_up_composite_indexes(
         project = gcloud_project or configuration.get_config(config_name).project
 
         # Build collection group path using configuration helper (includes prefix)
-        collection_group = configuration.get_collection_name(
-            model, config_name=config_name
-        )
+        collection_group = configuration.get_collection_name(model, config_name=config_name)
         path = f"projects/{project}/databases/{database}/collectionGroups/{collection_group}"
 
         indexes_in_db = await get_existing_indexes(client, path=path)

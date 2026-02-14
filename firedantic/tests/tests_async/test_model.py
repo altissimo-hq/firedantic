@@ -71,9 +71,7 @@ async def test_find_one(create_company) -> None:
     first_asc = await Company.find_one(order_by=[("owner.first_name", Query.ASCENDING)])
     assert first_asc.owner.first_name == "Bar"
 
-    first_desc = await Company.find_one(
-        order_by=[("owner.first_name", Query.DESCENDING)]
-    )
+    first_desc = await Company.find_one(order_by=[("owner.first_name", Query.DESCENDING)])
     assert first_desc.owner.first_name == "Foo"
 
 
@@ -183,18 +181,12 @@ async def test_find_order_by(create_company) -> None:
         {"company_id": "4124432-5", "last_name": "D", "first_name": "H"},
     ]
 
-    companies_and_owners = [
-        await create_company(**item) for item in companies_and_owners
-    ]
+    companies_and_owners = [await create_company(**item) for item in companies_and_owners]
 
-    companies_ascending = await Company.find(
-        order_by=[("owner.first_name", Query.ASCENDING)]
-    )
+    companies_ascending = await Company.find(order_by=[("owner.first_name", Query.ASCENDING)])
     assert companies_ascending == companies_and_owners
 
-    companies_descending = await Company.find(
-        order_by=[("owner.first_name", Query.DESCENDING)]
-    )
+    companies_descending = await Company.find(order_by=[("owner.first_name", Query.DESCENDING)])
     reversed_companies_and_owners = list(reversed(companies_and_owners))
     assert companies_descending == reversed_companies_and_owners
 
@@ -204,9 +196,7 @@ async def test_find_order_by(create_company) -> None:
             ("owner.first_name", Query.DESCENDING),
         ]
     )
-    expected = sorted(
-        companies_and_owners, key=attrgetter("owner.first_name"), reverse=True
-    )
+    expected = sorted(companies_and_owners, key=attrgetter("owner.first_name"), reverse=True)
     expected = sorted(expected, key=attrgetter("owner.last_name"))
     assert expected == lastname_ascending_firstname_descending
 
@@ -540,9 +530,7 @@ async def test_update_city_in_transaction() -> None:
     """
 
     @async_transactional
-    async def decrement_population(
-        transaction: AsyncTransaction, city: City, decrement: int = 1
-    ):
+    async def decrement_population(transaction: AsyncTransaction, city: City, decrement: int = 1):
         await city.reload(transaction=transaction)
         city.population = max(0, city.population - decrement)
         await city.save(transaction=transaction)

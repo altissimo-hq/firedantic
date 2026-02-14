@@ -1,9 +1,7 @@
 from google.cloud.firestore_v1 import AsyncCollectionReference
 
 
-async def truncate_collection(
-    col_ref: AsyncCollectionReference, batch_size: int = 128
-) -> int:
+async def truncate_collection(col_ref: AsyncCollectionReference, batch_size: int = 128) -> int:
     """
     Removes all documents inside a collection.
 

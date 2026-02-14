@@ -62,7 +62,6 @@ async def test_old_way():
 
 ## With single async client
 async def test_with_default():
-
     class Owner(AsyncModel):
         """Dummy owner Pydantic model."""
 
@@ -96,10 +95,7 @@ async def test_with_default():
 
     # Assert that async client exists and configuration is correct
     assert isinstance(configuration.get_async_client(), AsyncClient)
-    assert (
-        configuration.get_collection_name(Owner)
-        == configuration.get_config().prefix + "owners"
-    )
+    assert configuration.get_collection_name(Owner) == configuration.get_config().prefix + "owners"
     assert (
         configuration.get_collection_name(Company)
         == configuration.get_config().prefix + "companies"
@@ -126,7 +122,6 @@ async def test_with_default():
 
 # Now with multiple ASYNC clients/dbs:
 async def test_with_multiple():
-
     config_name = "companies"
 
     class Owner(AsyncModel):
@@ -251,9 +246,7 @@ async def test_with_multiple():
     if not deletion_success:
         print(f"\nDeletion of Company DB failed\n")
 
-    deletion_success = [] == await BillingCompany.find(
-        {"billing_account.billing_id": 801048}
-    )
+    deletion_success = [] == await BillingCompany.find({"billing_account.billing_id": 801048})
     if not deletion_success:
         print(f"\nDeletion of BillingCompany DB failed\n")
 

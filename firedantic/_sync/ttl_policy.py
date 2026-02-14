@@ -56,9 +56,7 @@ def set_up_ttl_policies(
 
         if field_obj.ttl_config.state == Field.TtlConfig.State.STATE_UNSPECIFIED:
             logger.info("Setting up new TTL config: " + log_str, *log_params)
-            field_obj.ttl_config = Field.TtlConfig(
-                {"state": Field.TtlConfig.State.CREATING}
-            )
+            field_obj.ttl_config = Field.TtlConfig({"state": Field.TtlConfig.State.CREATING})
             operation = client.update_field({"field": field_obj})
             operations.append(operation)
         elif field_obj.ttl_config.state == Field.TtlConfig.State.CREATING:

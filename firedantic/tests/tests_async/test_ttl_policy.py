@@ -14,8 +14,7 @@ async def test_set_up_ttl_policies_new_policy(mock_admin_client):
     assert len(result) == 1
     # Ensure the update field was called to set the state to creating
     assert (
-        mock_admin_client.updated_field["field"].ttl_config.state
-        == Field.TtlConfig.State.CREATING
+        mock_admin_client.updated_field["field"].ttl_config.state == Field.TtlConfig.State.CREATING
     )
 
 

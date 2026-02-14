@@ -2,11 +2,7 @@
 name = "firedantic"
 version = "0.13.0"
 description = "Pydantic base models for Firestore"
-authors = [
-    "IOXIO Ltd",
-    "Marissa Fisher <mfisher29@users.noreply.github.com>",
-    "Altissimo HQ",
-]
+authors = ["IOXIO Ltd", "Altissimo LLC"]
 license = "BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/altissimo-hq/firedantic"
@@ -23,15 +19,49 @@ report_only = false
 sources = ["pyup", "gemnasium"]
 
 [tool.poetry.group.dev.dependencies]
-black = "^25.1.0"
-flake8 = "^7.1.2"
 invoke = "^2.2.0"
-isort = "^5.12.0"
 mypy = "^1.15.0"
+pre-commit = "^4.0.0"
 pytest = "^8.3.4"
 pytest-asyncio = "^0.25.3"
 pytest-cov = "^7.0.0"
+ruff = "^0.8.0"
 watchdog = "^6.0.0"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = ["firedantic/tests/**", "integration_tests/**"]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+]
+ignore = [
+    "E501", # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["firedantic"]
+known-third-party = ["google", "invoke", "pydantic", "pytest"]
+
+[tool.pytest.ini_options]
+addopts = "-v"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    # https://github.com/googleapis/python-firestore/issues/804
+    "ignore::UserWarning:.*google.cloud.firestore_v1.base_collection.*:",
+]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.mypy]
+warn_return_any = true
+ignore_missing_imports = true
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

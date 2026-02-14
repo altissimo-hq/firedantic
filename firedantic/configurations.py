@@ -2,8 +2,6 @@ import warnings
 from os import environ
 from typing import Any, Dict, Optional, Type, Union
 
-from google.api_core.client_options import ClientOptions
-from google.api_core.gapic_v1.client_info import ClientInfo
 from google.auth.credentials import Credentials
 from google.cloud.firestore_admin_v1 import FirestoreAdminClient
 from google.cloud.firestore_admin_v1.services.firestore_admin import (
@@ -99,7 +97,6 @@ class Configuration:
     """
 
     def __init__(self) -> None:
-
         # mapping name -> ConfigItem
         self.config: Dict[str, ConfigItem] = {}
 
@@ -240,9 +237,7 @@ class Configuration:
         return cfg.admin_client
 
     # async admin client accessor (lazy-create)
-    def get_async_admin_client(
-        self, name: Optional[str] = None
-    ) -> FirestoreAdminAsyncClient:
+    def get_async_admin_client(self, name: Optional[str] = None) -> FirestoreAdminAsyncClient:
         resolved = name if name is not None else "(default)"
         cfg = self.get_config(resolved)
 
@@ -263,9 +258,7 @@ class Configuration:
         return self.get_async_client(name=name).transaction()
 
     # helpers for models to derive collection name / reference
-    def get_collection_name(
-        self, model_class: Type, config_name: Optional[str] = None
-    ) -> str:
+    def get_collection_name(self, model_class: Type, config_name: Optional[str] = None) -> str:
         """
         Return the collection name string (prefix + model name).
         """
