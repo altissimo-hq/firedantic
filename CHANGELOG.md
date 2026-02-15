@@ -7,6 +7,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-02-14
+
+### Changed
+
+- Migrated development tooling from black/isort/flake8 to ruff for linting and
+  formatting
+- Updated pre-commit hooks to use ruff
+- No functional changes to library behavior
+
 ## [0.13.0] - 2025-12-12
 
 ### Added
@@ -306,7 +315,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/ioxiocom/firedantic/compare/0.12.0...HEAD
+[unreleased]: https://github.com/ioxiocom/firedantic/compare/0.13.1...HEAD
+[0.13.1]: https://github.com/ioxiocom/firedantic/compare/0.13.0...0.13.1
+[0.13.0]: https://github.com/ioxiocom/firedantic/compare/0.12.0...0.13.0
 [0.12.0]: https://github.com/ioxiocom/firedantic/compare/0.11.0...0.12.0
 [0.11.0]: https://github.com/ioxiocom/firedantic/compare/0.10.0...0.11.0
 [0.10.0]: https://github.com/ioxiocom/firedantic/compare/0.9.0...0.10.0

@@ -69,7 +69,7 @@ class City(AsyncModel):
             await self.save(transaction=transaction)
 
         t = get_async_transaction()
-        await _increment_population(transaction=t)
+        await _increment_population(t)
 
 
 class Owner(BaseModel):

@@ -490,14 +490,14 @@ def test_save_with_exclude_none() -> None:
     # pylint: disable=protected-access
     document = Profile._get_col_ref().document(document_id).get()
 
-    data = document.to_dict()
+    data = document.to_dict()  # type: ignore[union-attr]
     assert data == {"name": "Foo"}
     p.save()
 
     # pylint: disable=protected-access
     document = Profile._get_col_ref().document(document_id).get()
 
-    data = document.to_dict()
+    data = document.to_dict()  # type: ignore[union-attr]
     assert data == {"name": "Foo", "photo_url": None}
 
 
@@ -512,14 +512,14 @@ def test_save_with_exclude_unset() -> None:
     # pylint: disable=protected-access
     document = Profile._get_col_ref().document(document_id).get()
 
-    data = document.to_dict()
+    data = document.to_dict()  # type: ignore[union-attr]
     assert data == {"photo_url": None}
     p.save()
 
     # pylint: disable=protected-access
     document = Profile._get_col_ref().document(document_id).get()
 
-    data = document.to_dict()
+    data = document.to_dict()  # type: ignore[union-attr]
     assert data == {"name": "", "photo_url": None}
 
 
@@ -546,7 +546,7 @@ def test_update_city_in_transaction() -> None:
 
 
 
-def test_delete_in_transaction(create_company):
+def test_delete_in_transaction(create_company) -> None:
     """
     Test deleting a Company model within a Firestore transaction.
     """

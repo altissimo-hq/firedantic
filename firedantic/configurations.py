@@ -267,7 +267,7 @@ class Configuration:
         prefix = cfg.prefix or ""
 
         if hasattr(model_class, "__collection__"):
-            return prefix + model_class.__collection__
+            return str(prefix + model_class.__collection__)
         else:
             model_name = model_class.__name__
             return f"{prefix}{model_name[0].lower()}{model_name[1:]}"  # (lower case first letter of model name)
@@ -284,7 +284,7 @@ class Configuration:
         if client is None:
             raise RuntimeError(f"No sync client configured for config '{resolved}'")
         collection_name = self.get_collection_name(model_class, resolved)
-        return client.collection(collection_name)
+        return client.collection(collection_name)  # type: ignore[no-any-return]
 
     def get_async_collection_ref(self, model_class: Type, name: Optional[str] = None):
         """

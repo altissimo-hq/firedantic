@@ -125,7 +125,7 @@ class BareModel(pydantic.BaseModel, ABC):
         if config_name is not None:
             resolved = config_name
         else:
-            resolved = getattr(self, "__db_config__", None)
+            resolved = getattr(self, "__db_config__", "")
         if not resolved:
             resolved = getattr(self.__class__, "__db_config__", "(default)")
 
@@ -401,8 +401,12 @@ class BareModel(pydantic.BaseModel, ABC):
             ) from e
 
         document: DocumentSnapshot = (
-            cls._get_col_ref().document(doc_id).get(transaction=transaction)
-        )  # type: ignore
+            cls._get_col_ref()
+            .document(doc_id)
+            .get(  # type: ignore[assignment]
+                transaction=transaction
+            )
+        )
         data = document.to_dict()
         if data is None:
             raise ModelNotFoundError(
@@ -468,7 +472,7 @@ class BareModel(pydantic.BaseModel, ABC):
 
         if document_id in (".", ".."):
             raise InvalidDocumentID(
-                "Document ID cannot solely consist of a single period (.) or double " "periods (..)"
+                "Document ID cannot solely consist of a single period (.) or double periods (..)"
             )
 
         if document_id == "":
@@ -530,7 +534,7 @@ class BareSubModel(BareModel, ABC):
         )
 
     @classmethod
-    def _get_col_ref(cls) -> CollectionReference:
+    def _get_col_ref(cls, collection_name: Optional[str] = None) -> CollectionReference:
         """
         Returns the collection reference.
         """

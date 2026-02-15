@@ -114,7 +114,8 @@ async def set_up_composite_indexes(
         path = f"projects/{project}/databases/{database}/collectionGroups/{collection_group}"
 
         indexes_in_db = await get_existing_indexes(client, path=path)
-        model_indexes = set(model.__composite_indexes__)
+        model_indexes = set(model.__composite_indexes__)  # type: ignore[arg-type]
+
         existing_indexes = indexes_in_db.intersection(model_indexes)
         new_indexes = model_indexes.difference(indexes_in_db)
 
