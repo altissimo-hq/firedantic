@@ -69,7 +69,7 @@ class City(Model):
             self.save(transaction=transaction)
 
         t = get_transaction()
-        _increment_population(transaction=t)
+        _increment_population(t)
 
 
 class Owner(BaseModel):

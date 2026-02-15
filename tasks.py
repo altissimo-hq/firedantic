@@ -105,8 +105,7 @@ def unasync(ctx):
     import unasync
 
     unasync.main()
-    ctx.run("poetry run black .")
-    ctx.run("poetry run isort .")
+    ctx.run("poetry run ruff format .")
 
 
 @task
@@ -152,9 +151,7 @@ def make_changelog(ctx):
     [unreleased]: {repo_link}/compare/{version}...HEAD
     [{version}]: {repo_link}/compare/{old_version}...{version}
     """
-    new_changelog = re.sub(
-        r"\[unreleased]:.*?HEAD", dedent(links).strip(), new_changelog
-    )
+    new_changelog = re.sub(r"\[unreleased]:.*?HEAD", dedent(links).strip(), new_changelog)
 
     changelog_path.write_text(new_changelog)
     print(f"{changelog_path} was updated, please fill in release information")

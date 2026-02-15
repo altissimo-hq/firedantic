@@ -6,7 +6,12 @@
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/firedantic)](https://pypi.org/project/firedantic/)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
-> **About this fork:** This is the actively maintained fork of firedantic under altissimo-hq. The original upstream repository ([ioxiocom/firedantic](https://github.com/ioxiocom/firedantic)) has no active maintainer as of January 2026. This fork includes Marissa Fisher's (@mfisher29) comprehensive multi-configuration support (v0.13.0) and will continue to receive updates, bug fixes, and new features.
+> **About this fork:** This is the actively maintained fork of firedantic under
+> altissimo-hq. The original upstream repository
+> ([ioxiocom/firedantic](https://github.com/ioxiocom/firedantic)) has no active
+> maintainer as of January 2026. This fork includes Marissa Fisher's (@mfisher29)
+> comprehensive multi-configuration support (v0.13.0) and will continue to receive
+> updates, bug fixes, and new features.
 
 Database models for Firestore using Pydantic base models.
 
@@ -762,7 +767,6 @@ information about the release in [CHANGELOG.md](CHANGELOG.md):
 poetry run invoke make-changelog
 ```
 
-
 ### Running Tests
 
 To run tests locally, you should first:
@@ -780,7 +784,6 @@ with 'client' text across both directories.
 \*Note, the emulator must be set and running for all tests to pass.
 
 ### Running Integration Tests
-
 
 #### Environment and configuration
 
@@ -800,11 +803,11 @@ with 'client' text across both directories.
 
 #### How to run
 
-Run each individual test file: 
+Run each individual test file:
 
-- `poetry run python integration_tests/configure_firestore_db_clients.py` 
-- `poetry run python integration_tests/full_sync_flow.py` 
-- `poetry run python integration_tests/full_async_flow.py` 
+- `poetry run python integration_tests/configure_firestore_db_clients.py`
+- `poetry run python integration_tests/full_sync_flow.py`
+- `poetry run python integration_tests/full_async_flow.py`
 - `poetry run python integration_tests/full_readme_examples.py`
 
 or run all:

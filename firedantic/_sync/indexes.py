@@ -19,9 +19,7 @@ from firedantic.configurations import configuration
 logger = getLogger("firedantic")
 
 
-def get_existing_indexes(
-    client: FirestoreAdminClient, path: str
-) -> Set[IndexDefinition]:
+def get_existing_indexes(client: FirestoreAdminClient, path: str) -> Set[IndexDefinition]:
     """
     Get existing database indexes and return a set of them
     for easy comparison with other indexes
@@ -71,8 +69,7 @@ def create_composite_index(
                 {
                     "query_scope": index.query_scope,
                     "fields": [
-                        {"field_path": field[0], "order": field[1]}
-                        for field in list(index.fields)
+                        {"field_path": field[0], "order": field[1]} for field in list(index.fields)
                     ],
                 }
             ),
@@ -111,13 +108,12 @@ def set_up_composite_indexes(
         project = gcloud_project or configuration.get_config(config_name).project
 
         # Build collection group path using configuration helper (includes prefix)
-        collection_group = configuration.get_collection_name(
-            model, config_name=config_name
-        )
+        collection_group = configuration.get_collection_name(model, config_name=config_name)
         path = f"projects/{project}/databases/{database}/collectionGroups/{collection_group}"
 
         indexes_in_db = get_existing_indexes(client, path=path)
-        model_indexes = set(model.__composite_indexes__)
+        model_indexes = set(model.__composite_indexes__)  # type: ignore[arg-type]
+
         existing_indexes = indexes_in_db.intersection(model_indexes)
         new_indexes = model_indexes.difference(indexes_in_db)
 

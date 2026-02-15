@@ -87,9 +87,7 @@ def _get_col_ref(cls, collection_name: Optional[str] = None) -> CollectionRefere
 
     # Ensure we got the right object back
     if not hasattr(col_ref, "document"):
-        raise RuntimeError(
-            f"_get_col_ref returned unexpected object for {cls}: {type(col_ref)!r}"
-        )
+        raise RuntimeError(f"_get_col_ref returned unexpected object for {cls}: {type(col_ref)!r}")
     return col_ref
 
 
@@ -127,7 +125,7 @@ class BareModel(pydantic.BaseModel, ABC):
         if config_name is not None:
             resolved = config_name
         else:
-            resolved = getattr(self, "__db_config__", None)
+            resolved = getattr(self, "__db_config__", "")
         if not resolved:
             resolved = getattr(self.__class__, "__db_config__", "(default)")
 
@@ -171,12 +169,9 @@ class BareModel(pydantic.BaseModel, ABC):
         doc_ref = self._get_doc_ref()
 
         # try to extract client-like objects
-        doc_client = getattr(doc_ref, "_client", None) or getattr(
-            doc_ref, "client", None
-        )
+        doc_client = getattr(doc_ref, "_client", None) or getattr(doc_ref, "client", None)
         tx_client = (
-            getattr(transaction, "_client", None)
-            or getattr(transaction, "_client_async", None)
+            getattr(transaction, "_client", None) or getattr(transaction, "_client_async", None)
             if transaction is not None
             else None
         )
@@ -186,16 +181,10 @@ class BareModel(pydantic.BaseModel, ABC):
             tx_client = getattr(transaction, "_client", None) or getattr(
                 transaction, "_client_async", None
             )
-            doc_client = getattr(doc_ref, "_client", None) or getattr(
-                doc_ref, "client", None
-            )
+            doc_client = getattr(doc_ref, "_client", None) or getattr(doc_ref, "client", None)
 
             # If both sides expose client objects, ensure they are same identity.
-            if (
-                tx_client is not None
-                and doc_client is not None
-                and tx_client is not doc_client
-            ):
+            if tx_client is not None and doc_client is not None and tx_client is not doc_client:
                 # Try to rebuild a document reference from the transaction's client using the same path
                 path = getattr(doc_ref, "path", None)
                 if path is None:
@@ -216,9 +205,7 @@ class BareModel(pydantic.BaseModel, ABC):
                         if len(parts) >= 2:
                             collection_path = "/".join(parts[:-1])
                             doc_id = parts[-1]
-                            alt_doc_ref = tx_client.collection(
-                                collection_path
-                            ).document(doc_id)
+                            alt_doc_ref = tx_client.collection(collection_path).document(doc_id)
                     if alt_doc_ref is None:
                         raise RuntimeError(
                             "Could not rebuild document reference from transaction client."
@@ -341,7 +328,8 @@ class BareModel(pydantic.BaseModel, ABC):
         return [
             _cls(doc_id, doc_dict)
             for doc_id, doc_dict in (
-                (doc.id, doc.to_dict()) for doc in query.stream(transaction=transaction)  # type: ignore
+                (doc.id, doc.to_dict())
+                for doc in query.stream(transaction=transaction)  # type: ignore
             )
             if doc_dict is not None
         ]
@@ -413,8 +401,12 @@ class BareModel(pydantic.BaseModel, ABC):
             ) from e
 
         document: DocumentSnapshot = (
-            cls._get_col_ref().document(doc_id).get(transaction=transaction)
-        )  # type: ignore
+            cls._get_col_ref()
+            .document(doc_id)
+            .get(  # type: ignore[assignment]
+                transaction=transaction
+            )
+        )
         data = document.to_dict()
         if data is None:
             raise ModelNotFoundError(
@@ -452,16 +444,12 @@ class BareModel(pydantic.BaseModel, ABC):
         """
         return get_collection_name(cls, cls.__collection__)
 
-    def _get_doc_ref(
-        self, config_name: Optional[str] = "(default)"
-    ) -> DocumentReference:
+    def _get_doc_ref(self, config_name: Optional[str] = "(default)") -> DocumentReference:
         """
         Returns the document reference.
 
         :raise DocumentIDError: If the ID is not valid.
         """
-        # _get_col_ref takes collection_name, not config_name.
-        # Any specific config usage should likely be handled by context or passed properly if supported.
         return self._get_col_ref().document(self.get_document_id())  # type: ignore
 
     @staticmethod
@@ -479,19 +467,12 @@ class BareModel(pydantic.BaseModel, ABC):
         if "/" in document_id:
             raise InvalidDocumentID("Document ID cannot contain a forward slash (/)")
 
-        if (
-            document_id.startswith("__")
-            and document_id.endswith("__")
-            and len(document_id) >= 4
-        ):
-            raise InvalidDocumentID(
-                "Document ID cannot match the regular expression __.*__"
-            )
+        if document_id.startswith("__") and document_id.endswith("__") and len(document_id) >= 4:
+            raise InvalidDocumentID("Document ID cannot match the regular expression __.*__")
 
         if document_id in (".", ".."):
             raise InvalidDocumentID(
-                "Document ID cannot solely consist of a single period (.) or double "
-                "periods (..)"
+                "Document ID cannot solely consist of a single period (.) or double periods (..)"
             )
 
         if document_id == "":
@@ -553,7 +534,7 @@ class BareSubModel(BareModel, ABC):
         )
 
     @classmethod
-    def _get_col_ref(cls) -> CollectionReference:
+    def _get_col_ref(cls, collection_name: Optional[str] = None) -> CollectionReference:
         """
         Returns the collection reference.
         """

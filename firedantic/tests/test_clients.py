@@ -123,9 +123,7 @@ def test_multiple_clients_are_independent(monkeypatch):
 
     cfg = Configuration()
     cfg.add(prefix="firedantic-test-", project="proj-default", credentials=creds)
-    cfg.add(
-        name="billing", prefix="billing-", project="proj-billing", credentials=creds
-    )
+    cfg.add(name="billing", prefix="billing-", project="proj-billing", credentials=creds)
 
     # clients for "(default)"" config
     default_sync = cfg.get_client()
@@ -166,7 +164,6 @@ def test___getitem___and_contains_behavior(monkeypatch):
 
 
 def test_configure_client():
-
     project = "firedantic-test"
     prefix = "firedantic-test-"
     creds = Mock(spec=google.auth.credentials.Credentials)
@@ -214,9 +211,7 @@ def test_configure_multiple_clients():
     mock_creds = Mock(spec=google.auth.credentials.Credentials)
 
     # name = (default)
-    config.add(
-        prefix="firedantic-test-", project="firedantic-test", credentials=mock_creds
-    )
+    config.add(prefix="firedantic-test-", project="firedantic-test", credentials=mock_creds)
 
     # name = billing
     config.add(
@@ -274,9 +269,7 @@ def test_get_admin_client_lazy_creation(monkeypatch):
     cfg = Configuration()
 
     # monkeypatch the admin client class used inside the module
-    monkeypatch.setattr(
-        "firedantic.configurations.FirestoreAdminClient", FakeAdminClient
-    )
+    monkeypatch.setattr("firedantic.configurations.FirestoreAdminClient", FakeAdminClient)
 
     # add a config that does not supply admin_client upfront
     cfg.add(name="x", project="proj-a", database="(default)", prefix="p-")
@@ -301,9 +294,7 @@ def test_get_async_admin_client_lazy_creation(monkeypatch):
     """
     cfg = Configuration()
 
-    monkeypatch.setattr(
-        "firedantic.configurations.FirestoreAdminAsyncClient", FakeAsyncAdminClient
-    )
+    monkeypatch.setattr("firedantic.configurations.FirestoreAdminAsyncClient", FakeAsyncAdminClient)
 
     cfg.add(name="y", project="proj-b", database="billing", prefix="pb-")
 
@@ -355,9 +346,7 @@ def test_admin_client_creation_receives_transport_and_client_options(monkeypatch
         captured["args"] = args
         return inst
 
-    monkeypatch.setattr(
-        "firedantic.configurations.FirestoreAdminClient", fake_constructor
-    )
+    monkeypatch.setattr("firedantic.configurations.FirestoreAdminClient", fake_constructor)
 
     # pass some admin_transport and client_options into add()
     fake_transport = object()

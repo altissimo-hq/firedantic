@@ -1,3 +1,4 @@
+from typing import Type
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -8,7 +9,7 @@ from firedantic.configurations import CONFIGURATIONS
 
 
 @pytest.fixture
-def MockModelClass():
+def MockModelClass() -> Type[AsyncModel]:
     class TestModel(AsyncModel):
         __collection__ = "mock_models"
         name: str

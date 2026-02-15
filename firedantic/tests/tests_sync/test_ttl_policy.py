@@ -5,6 +5,7 @@ from firedantic import set_up_ttl_policies
 from firedantic.tests.tests_sync.conftest import ExpiringModel
 
 
+
 def test_set_up_ttl_policies_new_policy(mock_admin_client):
     result = set_up_ttl_policies(
         gcloud_project="fake-project", models=[ExpiringModel], client=mock_admin_client
@@ -13,8 +14,7 @@ def test_set_up_ttl_policies_new_policy(mock_admin_client):
     assert len(result) == 1
     # Ensure the update field was called to set the state to creating
     assert (
-        mock_admin_client.updated_field["field"].ttl_config.state
-        == Field.TtlConfig.State.CREATING
+        mock_admin_client.updated_field["field"].ttl_config.state == Field.TtlConfig.State.CREATING
     )
 
 
@@ -26,6 +26,7 @@ def test_set_up_ttl_policies_new_policy(mock_admin_client):
         [Field.TtlConfig.State.NEEDS_REPAIR],
     ),
 )
+
 def test_set_up_ttl_policies_other_states(mock_admin_client, state):
     mock_admin_client.field_state = Field.TtlConfig.State.ACTIVE
     result = set_up_ttl_policies(

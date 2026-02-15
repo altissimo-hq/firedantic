@@ -59,7 +59,6 @@ def test_old_way():
 
 ## With single sync client
 def test_with_default():
-
     class Owner(Model):
         """Dummy owner Pydantic model."""
 
@@ -93,10 +92,7 @@ def test_with_default():
 
     # Assert that sync client exists and configuration is correct
     assert isinstance(configuration.get_client(), Client)
-    assert (
-        configuration.get_collection_name(Owner)
-        == configuration.get_config().prefix + "owners"
-    )
+    assert configuration.get_collection_name(Owner) == configuration.get_config().prefix + "owners"
     assert (
         configuration.get_collection_name(Company)
         == configuration.get_config().prefix + "companies"
@@ -119,7 +115,6 @@ def test_with_default():
 
 # Now with multiple SYNC clients/dbs:
 def test_with_multiple():
-
     config_name = "companies"
 
     class Owner(Model):

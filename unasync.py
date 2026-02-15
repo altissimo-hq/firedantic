@@ -47,9 +47,7 @@ SUBS = [
     ("FirestoreAdminAsyncClient", "FirestoreAdminClient"),
     ("google.api_core.operation_async", "google.api_core.operation"),
 ]
-COMPILED_SUBS = [
-    (re.compile(r"(^|\b)" + regex + r"($|\b)"), repl) for regex, repl in SUBS
-]
+COMPILED_SUBS = [(re.compile(r"(^|\b)" + regex + r"($|\b)"), repl) for regex, repl in SUBS]
 
 
 def unasync_line(line):
