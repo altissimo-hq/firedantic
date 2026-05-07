@@ -196,9 +196,9 @@ class Configuration:
             cfg.client = Client(
                 project=cfg.project,
                 credentials=cfg.credentials,
+                database=cfg.database,
                 client_info=cfg.client_info,
                 client_options=cfg.client_options,  # type: ignore[arg-type]
-                # NOTE: modern firestore clients may accept database param in constructor; keep for future.
             )
         return cfg.client
 
@@ -217,6 +217,7 @@ class Configuration:
             cfg.async_client = AsyncClient(
                 project=cfg.project,
                 credentials=cfg.credentials,
+                database=cfg.database,
                 client_info=cfg.client_info,
                 client_options=cfg.client_options,  # type: ignore[arg-type]
             )

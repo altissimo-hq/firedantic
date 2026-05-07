@@ -7,6 +7,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-05-06
+
+### Fixed
+
+- Fixed multi-database routing bugs where the `database` parameter was ignored during
+  client initialization.
+- Fixed an issue where dynamic sub-models created via `model_for()` would lose their
+  `__db_config__` attribute, causing them to revert to the default database.
+- Fixed sub-collection routing to correctly use the model's configured database.
+
 ## [0.13.1] - 2026-02-14
 
 ### Changed

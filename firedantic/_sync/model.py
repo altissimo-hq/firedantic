@@ -515,6 +515,7 @@ class BareSubCollection(ABC):
         ic.__collection_cls__ = cls
         ic.__collection__ = cls.__collection_tpl__.format(**parent_props)
         ic.__document_id__ = cls.__document_id__
+        ic.__db_config__ = getattr(model_class, "__db_config__", "(default)")
 
         return ic
 
@@ -543,7 +544,7 @@ class BareSubModel(BareModel, ABC):
                 f"{cls.__name__} is not properly prepared. "
                 f"You should use {cls.__name__}.model_for(parent)"
             )
-        return _get_col_ref(cls.__collection_cls__, cls.__collection__)
+        return _get_col_ref(cls, cls.__collection__)
 
     @classmethod
     def model_for(cls, parent):
