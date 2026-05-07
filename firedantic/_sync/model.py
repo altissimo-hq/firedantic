@@ -515,7 +515,9 @@ class BareSubCollection(ABC):
         ic.__collection_cls__ = cls
         ic.__collection__ = cls.__collection_tpl__.format(**parent_props)
         ic.__document_id__ = cls.__document_id__
-        ic.__db_config__ = getattr(model_class, "__db_config__", "(default)")
+        ic.__db_config__ = getattr(
+            parent, "__db_config__", getattr(model_class, "__db_config__", "(default)")
+        )
 
         return ic
 

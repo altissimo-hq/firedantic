@@ -169,7 +169,7 @@ def test_configure_client():
     creds = Mock(spec=google.auth.credentials.Credentials)
 
     if not environ.get("FIRESTORE_EMULATOR_HOST"):
-        raise "Firestore emulator must be running"
+        raise Exception("Firestore emulator must be running")
 
     config = Configuration()
     config.add(prefix=prefix, project=project, credentials=creds)
@@ -195,7 +195,7 @@ def test_configure_async_client():
             credentials=creds,
         )
     else:
-        raise "Firestore emulator must be running"
+        raise Exception("Firestore emulator must be running")
 
     config = Configuration()
     config.add(prefix=prefix, project=project, credentials=creds)
