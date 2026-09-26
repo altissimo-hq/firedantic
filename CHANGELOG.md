@@ -16,6 +16,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Fixed an issue where dynamic sub-models created via `model_for()` would lose their
   `__db_config__` attribute, causing them to revert to the default database.
 - Fixed sub-collection routing to correctly use the model's configured database.
+  Sub-models always use their parent model's `__db_config__`, since a subcollection
+  lives under its parent document.
 
 ## [0.13.1] - 2026-02-14
 
@@ -325,7 +327,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/ioxiocom/firedantic/compare/0.13.1...HEAD
+[unreleased]: https://github.com/ioxiocom/firedantic/compare/0.13.2...HEAD
+[0.13.2]: https://github.com/ioxiocom/firedantic/compare/0.13.1...0.13.2
 [0.13.1]: https://github.com/ioxiocom/firedantic/compare/0.13.0...0.13.1
 [0.13.0]: https://github.com/ioxiocom/firedantic/compare/0.12.0...0.13.0
 [0.12.0]: https://github.com/ioxiocom/firedantic/compare/0.11.0...0.12.0
