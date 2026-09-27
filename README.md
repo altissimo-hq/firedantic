@@ -164,6 +164,16 @@ Product.avg("unit_value", {"stock": {op.GTE: 3}})
 Product.get_by_ids(["id-1", "id-2"])
 ```
 
+To page through results, pass the last model of the previous page as `start_after`. Its
+document ID or `get_document_path()` works too, for example when the cursor goes through
+an API. This is cheaper than `offset`, since Firestore bills for every document an
+offset skips.
+
+```python
+page = Product.find(order_by=[("stock", Query.ASCENDING)], limit=20)
+next_page = Product.find(order_by=[("stock", Query.ASCENDING)], limit=20, start_after=page[-1])
+```
+
 `sum()` and `avg()` take a Firestore field path, so they use field aliases and dots for
 nested fields. Values that aren't numbers are ignored. The sum of no values is 0, and
 the average is `None` if no matching document has the field. If the field exists but has
@@ -368,8 +378,9 @@ average_score = await AnimalSurvey.avg_in_group("score")
 
 ### Pagination
 
-Pass the last model of the previous page as `start_after` to get the next page. Its
-`get_document_path()` works too, for example when the cursor goes through an API:
+Like `find()`, `find_in_group()` takes the last model of the previous page as
+`start_after`. Its `get_document_path()` works too, but not its document ID, since the
+ID alone doesn't say which collection of the group the document is in:
 
 ```python
 from google.cloud.firestore import Query
