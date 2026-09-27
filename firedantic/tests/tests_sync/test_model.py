@@ -1,5 +1,5 @@
 from operator import attrgetter
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from uuid import uuid4
 
 import pytest
@@ -218,6 +218,53 @@ def test_find_pagination_with_filter_and_ties(create_product) -> None:
 def test_find_pagination_missing_cursor() -> None:
     with pytest.raises(ModelNotFoundError):
         Product.find(start_after="missing")
+
+
+
+def test_find_or(create_product) -> None:
+    for p in TEST_PRODUCTS:
+        create_product(**p)
+
+    def find_ids(filter_: Dict) -> List[str]:
+        return sorted(p.product_id for p in Product.find(filter_))
+
+    assert find_ids({op.OR: [{"stock": 0}, {"stock": {op.GTE: 3}}]}) == ["a", "d"]
+    # Top-level keys and the keys of each clause are combined with AND
+    assert find_ids(
+        {"product_id": {op.IN: ["a", "b", "c"]}, op.OR: [{"stock": 0}, {"stock": 3}]}
+    ) == ["a"]
+    assert find_ids({op.OR: [{"stock": {op.GTE: 1}, "product_id": "b"}, {"product_id": "a"}]}) == [
+        "a",
+        "b",
+    ]
+    # Nested AND and OR
+    assert find_ids(
+        {
+            op.OR: [
+                {op.AND: [{"stock": {op.GTE: 1}}, {"stock": {op.LT: 2}}]},
+                {op.OR: [{"product_id": "d"}]},
+            ]
+        }
+    ) == ["b", "d"]
+
+    assert Product.count({op.OR: [{"stock": 0}, {"stock": 3}]}) == 2
+    assert Product.sum("stock", {op.OR: [{"stock": 1}, {"stock": 3}]}) == 4
+    found = Product.find_one({op.OR: [{"product_id": "c"}, {"product_id": "missing"}]})
+    assert found.product_id == "c"
+
+
+
+def test_find_or_invalid() -> None:
+    filters: List[Dict] = [
+        {op.OR: []},
+        {op.OR: {"stock": 1}},
+        {op.OR: [{}]},
+        {op.AND: ["stock"]},
+        {op.OR: [{"stock": {"~": 1}}]},
+    ]
+    for filter_ in filters:
+        with pytest.raises(ValueError):
+            Product.find(filter_)
 
 
 

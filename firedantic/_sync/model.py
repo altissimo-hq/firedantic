@@ -17,11 +17,14 @@ from typing import (
 
 import pydantic
 from google.cloud.firestore_v1 import (
+    And,
     CollectionReference,
     DocumentReference,
     DocumentSnapshot,
     FieldFilter,
     Increment,
+    Or,
+    base_query,
 )
 from google.cloud.firestore_v1.base_query import BaseQuery
 from google.cloud.firestore_v1.transaction import Transaction
@@ -65,6 +68,7 @@ FIND_TYPES = {
 # FieldPath.document_id(), for filtering and ordering by document path
 DOCUMENT_ID = "__name__"
 INEQUALITY_TYPES = {op.LT, op.LTE, op.NE, op.GT, op.GTE, op.NOT_IN}
+COMPOSITE_TYPES = {op.OR, op.AND}
 
 
 def get_collection_name(cls, collection_name: Optional[str] = None) -> str:
@@ -934,13 +938,16 @@ class BareModel(pydantic.BaseModel, ABC):
         # collection ID after "root"
         return (root, "\x00"), (root + "\x00", "\x00")
 
-    @staticmethod
-    def _get_inequality_fields(filter_: Optional[Dict[str, Any]]) -> set:
-        return {
-            field
-            for field, value in (filter_ or {}).items()
-            if isinstance(value, dict) and INEQUALITY_TYPES.intersection(value)
-        }
+    @classmethod
+    def _get_inequality_fields(cls, filter_: Optional[Dict[str, Any]]) -> set:
+        fields = set()
+        for field, value in (filter_ or {}).items():
+            if field in COMPOSITE_TYPES:
+                for clause in value:
+                    fields |= cls._get_inequality_fields(clause)
+            elif isinstance(value, dict) and INEQUALITY_TYPES.intersection(value):
+                fields.add(field)
+        return fields
 
     @classmethod
     def _get_discriminator_filter(cls) -> Optional[Tuple[str, Any]]:
@@ -964,19 +971,34 @@ class BareModel(pydantic.BaseModel, ABC):
     def _add_filter(
         cls, query: Union[BaseQuery, CollectionReference], field: str, value: Any
     ) -> Union[BaseQuery, CollectionReference]:
+        for _filter in cls._get_field_filters(field, value):
+            query = query.where(filter=_filter)  # type: ignore
+        return query
+
+    @classmethod
+    def _get_field_filters(cls, field: str, value: Any) -> List[base_query.BaseFilter]:
+        """
+        Returns the Firestore filters for one key of a filter dict. `op.OR` and `op.AND`
+        take a list of filter dicts, whose keys are combined with AND.
+        """
+        if field in COMPOSITE_TYPES:
+            if not isinstance(value, list) or not value:
+                raise ValueError(f"{field} takes a non-empty list of filter dicts")
+            clauses: List[base_query.BaseFilter] = []
+            for clause in value:
+                if not isinstance(clause, dict) or not clause:
+                    raise ValueError(f"{field} takes a non-empty list of filter dicts")
+                filters = [f for key, v in clause.items() for f in cls._get_field_filters(key, v)]
+                clauses.append(filters[0] if len(filters) == 1 else And(filters))
+            return [Or(clauses) if field == op.OR else And(clauses)]
         if isinstance(value, dict):
             for f_type in value:
                 if f_type not in FIND_TYPES:
                     raise ValueError(
                         f"Unsupported filter type: {f_type}. Supported types are: {', '.join(FIND_TYPES)}"
                     )
-                _filter = FieldFilter(field, f_type, value[f_type])
-                query: BaseQuery = query.where(filter=_filter)  # type: ignore
-            return query
-        else:
-            _filter = FieldFilter(field, "==", value)
-            query: BaseQuery = query.where(filter=_filter)  # type: ignore
-            return query
+            return [FieldFilter(field, f_type, f_value) for f_type, f_value in value.items()]
+        return [FieldFilter(field, "==", value)]
 
     @classmethod
     def find_one(

@@ -12,9 +12,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Added a `start_after` cursor to `find()` for paging through results, like the one in
   `find_in_group()`. It takes a model from the previous page, its document ID or path,
   or a document snapshot.
-
-### Added
-
+- Added OR filters: `op.OR` (`"$or"`) and `op.AND` (`"$and"`) take a list of filter
+  dicts and can be nested, e.g.
+  `find({op.OR: [{"stock": 0}, {"price": {op.GTE: 10}}]})`. They work in every method
+  that takes a filter.
 - Added `sum()` and `avg()` to models, which sum and average a numeric field of the
   matching documents with an aggregation query, and `sum_in_group()` and
   `avg_in_group()` for the model's collection group. The average is `None` if no
