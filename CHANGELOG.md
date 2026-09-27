@@ -7,6 +7,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Added a `py.typed` marker so type checkers use firedantic's type hints (PEP 561).
+
+### Fixed
+
+- The `filter_` argument of `find()`, `find_one()`, `find_in_group()` and
+  `find_one_in_group()` is now typed `Dict[str, Any]`, so filters on `int`, `float`,
+  `bool`, `None` or `datetime` values no longer fail type checking. Based on upstream
+  ioxiocom/firedantic#88.
+
 ## [0.15.0] - 2026-09-27
 
 ### Changed

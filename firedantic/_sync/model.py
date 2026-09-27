@@ -261,7 +261,7 @@ class BareModel(pydantic.BaseModel, ABC):
     @classmethod
     def find(  # pylint: disable=too-many-arguments
         cls: Type[TBareModel],
-        filter_: Optional[Dict[str, Union[str, dict]]] = None,
+        filter_: Optional[Dict[str, Any]] = None,
         order_by: Optional[_OrderBy] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
@@ -324,7 +324,7 @@ class BareModel(pydantic.BaseModel, ABC):
     @classmethod
     def find_in_group(  # pylint: disable=too-many-arguments
         cls: Type[TBareModel],
-        filter_: Optional[Dict[str, Union[str, dict]]] = None,
+        filter_: Optional[Dict[str, Any]] = None,
         order_by: Optional[_OrderBy] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
@@ -435,7 +435,7 @@ class BareModel(pydantic.BaseModel, ABC):
     @classmethod
     def find_one_in_group(
         cls: Type[TBareModel],
-        filter_: Optional[Dict[str, Union[str, dict]]] = None,
+        filter_: Optional[Dict[str, Any]] = None,
         order_by: Optional[_OrderBy] = None,
         transaction: Optional[Transaction] = None,
     ) -> TBareModel:
@@ -522,7 +522,7 @@ class BareModel(pydantic.BaseModel, ABC):
         return (root, "\x00"), (root + "\x00", "\x00")
 
     @staticmethod
-    def _get_inequality_fields(filter_: Optional[Dict[str, Union[str, dict]]]) -> set:
+    def _get_inequality_fields(filter_: Optional[Dict[str, Any]]) -> set:
         return {
             field
             for field, value in (filter_ or {}).items()
@@ -568,7 +568,7 @@ class BareModel(pydantic.BaseModel, ABC):
     @classmethod
     def find_one(
         cls: Type[TBareModel],
-        filter_: Optional[Dict[str, Union[str, dict]]] = None,
+        filter_: Optional[Dict[str, Any]] = None,
         order_by: Optional[_OrderBy] = None,
         transaction: Optional[Transaction] = None,
     ) -> TBareModel:
