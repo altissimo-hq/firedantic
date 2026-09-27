@@ -20,13 +20,26 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Set up Java ☕
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Install Firestore emulator 🚧
         run: |
           npm install -g firebase-tools
 
       - name: Start Firestore emulator 🚦
         run: |
-          ./start_emulator.sh > /dev/null 2>&1 &
+          ./start_emulator.sh > emulator.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -s http://127.0.0.1:8686 > /dev/null && exit 0
+            sleep 1
+          done
+          echo "Firestore emulator did not start:"
+          cat emulator.log
+          exit 1
 
       - name: Install Poetry and pre-commit 💈
         run: pip install poetry==2.2.1 pre-commit
