@@ -261,7 +261,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
     @classmethod
     async def find(  # pylint: disable=too-many-arguments
         cls: Type[TAsyncBareModel],
-        filter_: Optional[Dict[str, Union[str, dict]]] = None,
+        filter_: Optional[Dict[str, Any]] = None,
         order_by: Optional[_OrderBy] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
@@ -326,7 +326,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
     @classmethod
     async def find_in_group(  # pylint: disable=too-many-arguments
         cls: Type[TAsyncBareModel],
-        filter_: Optional[Dict[str, Union[str, dict]]] = None,
+        filter_: Optional[Dict[str, Any]] = None,
         order_by: Optional[_OrderBy] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
@@ -437,7 +437,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
     @classmethod
     async def find_one_in_group(
         cls: Type[TAsyncBareModel],
-        filter_: Optional[Dict[str, Union[str, dict]]] = None,
+        filter_: Optional[Dict[str, Any]] = None,
         order_by: Optional[_OrderBy] = None,
         transaction: Optional[AsyncTransaction] = None,
     ) -> TAsyncBareModel:
@@ -526,7 +526,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         return (root, "\x00"), (root + "\x00", "\x00")
 
     @staticmethod
-    def _get_inequality_fields(filter_: Optional[Dict[str, Union[str, dict]]]) -> set:
+    def _get_inequality_fields(filter_: Optional[Dict[str, Any]]) -> set:
         return {
             field
             for field, value in (filter_ or {}).items()
@@ -572,7 +572,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
     @classmethod
     async def find_one(
         cls: Type[TAsyncBareModel],
-        filter_: Optional[Dict[str, Union[str, dict]]] = None,
+        filter_: Optional[Dict[str, Any]] = None,
         order_by: Optional[_OrderBy] = None,
         transaction: Optional[AsyncTransaction] = None,
     ) -> TAsyncBareModel:
