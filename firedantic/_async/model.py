@@ -2,7 +2,18 @@ import re
 from abc import ABC
 from logging import getLogger
 from string import Formatter
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Type, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    overload,
+)
 
 import pydantic
 from google.cloud.firestore_v1 import (
@@ -18,7 +29,15 @@ from pydantic import PrivateAttr
 
 import firedantic.operators as op
 from firedantic import async_truncate_collection
-from firedantic.common import IndexDefinition, OrderDirection, increment_locally
+from firedantic.common import (
+    IndexDefinition,
+    OrderDirection,
+    get_path_value,
+    increment_locally,
+    is_transform,
+    quote_field_names,
+    set_path_value,
+)
 from firedantic.configurations import configuration
 from firedantic.exceptions import (
     CollectionNotDefined,
@@ -129,17 +148,176 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         config_name: Optional[str] = None,
         exclude_unset: bool = False,
         exclude_none: bool = False,
+        merge: bool = False,
         transaction: Optional[AsyncTransaction] = None,
     ) -> None:
         """
         Saves this model in the database.
 
+        By default the stored document is replaced, so fields left out with
+        `exclude_unset` or `exclude_none` are removed from it. With `merge=True` only
+        the saved fields are written and other stored fields are kept.
+
+        :param config_name: Configuration to use instead of the model's `__db_config__`.
         :param exclude_unset: Whether to exclude fields that have not been explicitly set.
         :param exclude_none: Whether to exclude fields that have a value of `None`.
+        :param merge: Whether to merge the fields into the stored document instead of
+            replacing it.
         :param transaction: Optional transaction to use.
         :raise DocumentIDError: If the document ID is not valid.
         """
+        doc_ref, data = self._prepare_write(config_name, exclude_unset, exclude_none)
 
+        # Use transaction if provided (assume it's compatible) otherwise do direct await set
+        if transaction is not None:
+            # Transaction.delete/set expects DocumentReference from the same client.
+            transaction.set(doc_ref, data, merge=merge)
+        else:
+            await doc_ref.set(data, merge=merge)
+
+        setattr(self, self.__document_id__, doc_ref.id)
+
+    async def create(
+        self,
+        *,
+        config_name: Optional[str] = None,
+        exclude_unset: bool = False,
+        exclude_none: bool = False,
+        transaction: Optional[AsyncTransaction] = None,
+    ) -> None:
+        """
+        Saves this model in the database as a new document. Unlike `save()`, this fails
+        if a document with the same ID already exists. Models without an ID get a
+        generated one.
+
+        :param config_name: Configuration to use instead of the model's `__db_config__`.
+        :param exclude_unset: Whether to exclude fields that have not been explicitly set.
+        :param exclude_none: Whether to exclude fields that have a value of `None`.
+        :param transaction: Optional transaction to use. The check for an existing
+            document happens when the transaction commits.
+        :raise DocumentIDError: If the document ID is not valid.
+        :raise google.api_core.exceptions.AlreadyExists: If the document already exists.
+        """
+        doc_ref, data = self._prepare_write(config_name, exclude_unset, exclude_none)
+
+        if transaction is not None:
+            transaction.create(doc_ref, data)
+        else:
+            await doc_ref.create(data)
+
+        setattr(self, self.__document_id__, doc_ref.id)
+
+    @overload
+    async def update(
+        self, *fields: str, transaction: Optional[AsyncTransaction] = None
+    ) -> None: ...
+
+    @overload
+    async def update(
+        self, changes: Dict[str, Any], /, *, transaction: Optional[AsyncTransaction] = None
+    ) -> None: ...
+
+    async def update(
+        self,
+        *fields: Union[str, Dict[str, Any]],
+        transaction: Optional[AsyncTransaction] = None,
+    ) -> None:
+        """
+        Updates fields of the stored document, leaving its other fields as they are.
+        Unlike `save(merge=True)`, this fails if the document doesn't exist.
+
+        Called with model field names, it writes the current values of those fields,
+        each as a whole. Without arguments, all fields of the model are written.
+
+        Called with a dict, it works like Firestore's `update()`: the keys are
+        Firestore field paths, so they use field aliases and dots for nested fields.
+        The changes are validated before they are written, and applied to this model
+        instance after they are written. Firestore transforms such as `DELETE_FIELD`,
+        `SERVER_TIMESTAMP` and `ArrayUnion` are written as they are, but only
+        `Increment` is applied to the instance, so use `reload()` to see the others.
+        In a transaction the instance is left unchanged, since the write only happens
+        when the transaction commits.
+
+        Examples: `product.stock = 5; product.update("stock")` and
+        `counter.update({"stats.visits": 3, "totalCount": Increment(1)})`.
+
+        :param fields: Names of the model fields to write, or a dict of changes.
+        :param transaction: Optional transaction to use.
+        :raise ModelNotFoundError: If the model has not been saved.
+        :raise ValueError: If a field is not a field of the model.
+        :raise pydantic.ValidationError: If the changes are not valid for the model.
+        :raise google.api_core.exceptions.NotFound: If the document does not exist.
+        """
+        if self.__dict__.get(self.__document_id__) is None:
+            raise ModelNotFoundError("Can not update unsaved model")
+
+        updated_model = None
+        if fields and isinstance(fields[0], dict):
+            if len(fields) > 1:
+                raise TypeError("update() takes field names or one dict of changes, not both")
+            changes = fields[0]
+            data, updated_model = self._prepare_changes(changes)
+        else:
+            if not all(isinstance(field, str) for field in fields):
+                raise TypeError("update() takes field names or one dict of changes, not both")
+            data = self._prepare_field_update(fields)  # type: ignore[arg-type]
+
+        doc_ref = self._get_doc_ref()
+        if transaction is not None:
+            transaction.update(doc_ref, data)
+            return
+        await doc_ref.update(data)
+
+        if updated_model is not None:
+            self.__dict__.update(updated_model.__dict__)
+            for path, value in changes.items():
+                if isinstance(value, Increment):
+                    increment_locally(self, path, value.value)
+
+    def _prepare_field_update(self, fields: Tuple[str, ...]) -> Dict[str, Any]:
+        """
+        Returns the data for writing the current values of `fields` with `update()`.
+        """
+        unknown = set(fields) - set(type(self).model_fields)
+        if unknown:
+            raise ValueError(f"Unknown fields for {type(self).__name__}: {sorted(unknown)}")
+
+        data = self.model_dump(by_alias=True, include=set(fields) or None)
+        data.pop(self._get_document_id_key(), None)
+        return quote_field_names(data)
+
+    def _prepare_changes(
+        self: TAsyncBareModel, changes: Dict[str, Any]
+    ) -> Tuple[Dict[str, Any], TAsyncBareModel]:
+        """
+        Validates the changes for `update()` by applying them to this model's data.
+        Returns the data to write, with the values serialized like `save()` does, and
+        the model with the changes applied, not counting Firestore transforms.
+        """
+        doc_id = self.__dict__[self.__document_id__]
+        stored = self.model_dump(by_alias=True)
+        stored.pop(self._get_document_id_key(), None)
+        values = {path: value for path, value in changes.items() if not is_transform(value)}
+        for path, value in values.items():
+            set_path_value(stored, path, value)
+        updated_model = self._model_from_data(doc_id, stored)
+
+        dumped = updated_model.model_dump(by_alias=True)
+        data = dict(changes)
+        for path in values:
+            found, value = get_path_value(dumped, path)
+            # Paths the model doesn't store, e.g. ignored extra fields, are written as given
+            if found:
+                data[path] = value
+        return data, updated_model
+
+    def _prepare_write(
+        self, config_name: Optional[str], exclude_unset: bool, exclude_none: bool
+    ) -> Tuple[AsyncDocumentReference, Dict[str, Any]]:
+        """
+        Returns the document reference and data for writing this model with `save()`
+        or `create()`. The reference has a generated ID if the model has none.
+        """
         # Resolve config to use (explicit -> instance -> class -> default)
         if config_name is not None:
             resolved = config_name
@@ -173,15 +351,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
             doc_ref = col_ref.document(doc_id)
         else:
             doc_ref = col_ref.document()
-
-        # Use transaction if provided (assume it's compatible) otherwise do direct await set
-        if transaction is not None:
-            # Transaction.delete/set expects DocumentReference from the same client.
-            transaction.set(doc_ref, data)
-        else:
-            await doc_ref.set(data)
-
-        setattr(self, self.__document_id__, doc_ref.id)
+        return doc_ref, data
 
     async def increment(
         self,

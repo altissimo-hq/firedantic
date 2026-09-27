@@ -185,6 +185,41 @@ The model instance gets the same change, but not other writes to the field, so u
 `reload()` to see the stored value. In a transaction the instance is left unchanged,
 since the write only happens when the transaction commits.
 
+#### Creating, merging and updating
+
+`save()` replaces the whole stored document, so fields left out with `exclude_unset` or
+`exclude_none` are removed from it. Firedantic has other writes for when that isn't
+wanted:
+
+```python
+# Fails with google.api_core.exceptions.AlreadyExists if the document exists
+product = Product(id="abc-123", product_id="abc-123", stock=10, unit_value=5)
+product.create()
+
+# Writes only the fields that were set and keeps the other stored fields
+Product(id="abc-123", stock=7).save(exclude_unset=True, merge=True)
+
+# Writes the current values of the given fields, and fails with
+# google.api_core.exceptions.NotFound if the document doesn't exist
+product.stock = 3
+product.update("stock")
+
+# Like Firestore's update(): Firestore field paths and their new values
+product.update({"stock": 5, "unit_value": 6})
+```
+
+`update()` takes either model field names or a dict of changes. With field names it
+writes the current value of each field as a whole. Without arguments it writes all
+fields of the model, but unlike `save()` it keeps stored fields the model doesn't have.
+
+With a dict, the keys are Firestore field paths, so they use field aliases and dots for
+nested fields, like `"stats.visits"`. The changes are validated with the model before
+they are written, and applied to the model instance after they are written. Firestore
+transforms such as `DELETE_FIELD`, `SERVER_TIMESTAMP`, `ArrayUnion` and `Increment` are
+passed through as they are. Only `Increment` is applied to the instance, so use
+`reload()` to see the result of the others. In a transaction the instance is left
+unchanged, since the write only happens when the transaction commits.
+
 ### Async Usage
 
 Firedantic can also be used in an async way, like this:
@@ -612,6 +647,7 @@ The following methods can be used in a transaction for both **sync** and **async
 models:
 
 - `Model.count(transaction=transaction)`
+- `Model.create(transaction=transaction)`
 - `Model.delete(transaction=transaction)`
 - `Model.find_one(transaction=transaction)`
 - `Model.find(transaction=transaction)`
@@ -622,6 +658,8 @@ models:
 - `Model.increment(field, amount, transaction=transaction)`
 - `Model.reload(transaction=transaction)`
 - `Model.save(transaction=transaction)`
+- `Model.update(*fields, transaction=transaction)`
+- `Model.update(changes, transaction=transaction)`
 - `SubModel.get_by_id(transaction=transaction)`
 - `SubModel.get_by_ids(transaction=transaction)`
 

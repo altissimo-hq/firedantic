@@ -3,7 +3,9 @@ from typing import Dict, Optional
 from uuid import uuid4
 
 import pytest
+from google.api_core.exceptions import AlreadyExists, NotFound
 from google.cloud.firestore import Query, async_transactional
+from google.cloud.firestore_v1 import DELETE_FIELD, Increment
 from google.cloud.firestore_v1.async_transaction import AsyncTransaction
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -235,6 +237,203 @@ async def test_increment_in_transaction() -> None:
     assert counter.total == 0
     await counter.reload()
     assert counter.total == 2
+
+async def get_stored_data(model: AsyncModel) -> Optional[Dict]:
+    # pylint: disable=protected-access
+    return (await model._get_doc_ref().get()).to_dict()
+
+
+@pytest.mark.asyncio
+async def test_save_merge() -> None:
+    p = Profile(name="Foo", photo_url="old")
+    await p.save()
+    assert p.id
+
+    # Only the set fields are written, the stored name is kept
+    await Profile(id=p.id, photo_url="new").save(exclude_unset=True, merge=True)
+    assert await get_stored_data(p) == {"name": "Foo", "photo_url": "new"}
+
+    # Without merge the document is replaced
+    await Profile(id=p.id, photo_url="newer").save(exclude_unset=True)
+    assert await get_stored_data(p) == {"photo_url": "newer"}
+
+
+@pytest.mark.asyncio
+async def test_save_merge_in_transaction() -> None:
+    p = Profile(name="Foo", photo_url="old")
+    await p.save()
+
+    @async_transactional
+    async def save_in_transaction(transaction: AsyncTransaction) -> None:
+        await Profile(id=p.id, photo_url="new").save(
+            exclude_unset=True, merge=True, transaction=transaction
+        )
+
+    await save_in_transaction(get_async_transaction())
+    assert await get_stored_data(p) == {"name": "Foo", "photo_url": "new"}
+
+
+@pytest.mark.asyncio
+async def test_create() -> None:
+    p = Profile(name="Foo")
+    await p.create()
+    assert p.id
+    assert await Profile.get_by_id(p.id) == p
+
+    with pytest.raises(AlreadyExists):
+        await Profile(id=p.id, name="Bar").create()
+    assert (await Profile.get_by_id(p.id)).name == "Foo"
+
+
+@pytest.mark.asyncio
+async def test_create_in_transaction() -> None:
+    p = Profile(name="Foo")
+    await p.create()
+
+    @async_transactional
+    async def create_in_transaction(transaction: AsyncTransaction) -> None:
+        await Profile(id=p.id, name="Bar").create(transaction=transaction)
+
+    with pytest.raises(AlreadyExists):
+        await create_in_transaction(get_async_transaction())
+    assert p.id
+    assert (await Profile.get_by_id(p.id)).name == "Foo"
+
+
+@pytest.mark.asyncio
+async def test_update() -> None:
+    counter = Counter(totalCount=1, by_day={"mon": 1})
+    await counter.save()
+    assert counter.id
+
+    # Another writer changes a field this instance doesn't write
+    await Counter(id=counter.id, optional=7).save(exclude_unset=True, merge=True)
+
+    counter.total = 5
+    counter.stats.visits = 3
+    counter.optional = None
+    await counter.update("total", "stats")
+    assert await get_stored_data(counter) == {
+        "totalCount": 5,
+        "stats": {"visits": 3},
+        "by_day": {"mon": 1},
+        "optional": 7,
+    }
+
+    # Without fields all of them are written
+    await counter.update()
+    assert await Counter.get_by_id(counter.id) == counter
+
+
+@pytest.mark.asyncio
+async def test_update_errors() -> None:
+    with pytest.raises(ModelNotFoundError):
+        await Counter().update("total")
+
+    with pytest.raises(NotFound):
+        await Counter(id=str(uuid4())).update("total")
+
+    counter = Counter()
+    await counter.save()
+    with pytest.raises(ValueError):
+        await counter.update("totalCount")
+
+
+@pytest.mark.asyncio
+async def test_update_in_transaction() -> None:
+    counter = Counter()
+    await counter.save()
+
+    @async_transactional
+    async def update_in_transaction(transaction: AsyncTransaction) -> None:
+        counter.total = 2
+        await counter.update("total", transaction=transaction)
+
+    await update_in_transaction(get_async_transaction())
+    assert counter.id
+    assert (await Counter.get_by_id(counter.id)).total == 2
+
+
+@pytest.mark.asyncio
+async def test_update_changes() -> None:
+    counter = Counter(by_day={"mon": 1})
+    await counter.save()
+    assert counter.id
+
+    # Another writer changes a field this instance doesn't write
+    await Counter(id=counter.id, optional=7).save(exclude_unset=True, merge=True)
+
+    await counter.update({"totalCount": 4, "stats.visits": 2, "by_day.tue": 5})
+    assert counter.total == 4
+    assert counter.stats.visits == 2
+    assert counter.by_day == {"mon": 1, "tue": 5}
+    assert await get_stored_data(counter) == {
+        "totalCount": 4,
+        "stats": {"visits": 2},
+        "by_day": {"mon": 1, "tue": 5},
+        "optional": 7,
+    }
+
+    # Values are serialized like save() does
+    await counter.update({"stats": CounterStats(visits=9)})
+    assert counter.stats.visits == 9
+    assert (await get_stored_data(counter))["stats"] == {"visits": 9}  # type: ignore[index]
+
+
+@pytest.mark.asyncio
+async def test_update_changes_validation() -> None:
+    counter = Counter(totalCount=1)
+    await counter.save()
+
+    with pytest.raises(ValidationError):
+        await counter.update({"totalCount": "many"})
+    assert counter.total == 1
+    assert (await get_stored_data(counter))["totalCount"] == 1  # type: ignore[index]
+
+
+@pytest.mark.asyncio
+async def test_update_changes_transforms() -> None:
+    counter = Counter(totalCount=1, optional=3)
+    await counter.save()
+    assert counter.id
+
+    await counter.update({"totalCount": Increment(2), "optional": DELETE_FIELD})
+    assert counter.total == 3
+    assert "optional" not in await get_stored_data(counter)  # type: ignore[operator]
+    await counter.reload()
+    assert counter.optional is None
+
+
+@pytest.mark.asyncio
+async def test_update_changes_errors() -> None:
+    with pytest.raises(ModelNotFoundError):
+        await Counter().update({"totalCount": 1})
+
+    with pytest.raises(NotFound):
+        await Counter(id=str(uuid4())).update({"totalCount": 1})
+
+    counter = Counter()
+    await counter.save()
+    with pytest.raises(TypeError):
+        await counter.update({"totalCount": 1}, "total")  # type: ignore[call-overload]
+
+
+@pytest.mark.asyncio
+async def test_update_changes_in_transaction() -> None:
+    counter = Counter()
+    await counter.save()
+
+    @async_transactional
+    async def update_in_transaction(transaction: AsyncTransaction) -> None:
+        await counter.update({"stats.visits": 2}, transaction=transaction)
+
+    await update_in_transaction(get_async_transaction())
+
+    # The write happens on commit, so the instance is not changed
+    assert counter.stats.visits == 0
+    await counter.reload()
+    assert counter.stats.visits == 2
+
 
 @pytest.mark.asyncio
 async def test_find_not_in(create_company) -> None:

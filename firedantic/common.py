@@ -1,7 +1,8 @@
-from typing import Any, Literal, NamedTuple, Optional, Tuple, Union
+from typing import Any, Dict, Literal, NamedTuple, Optional, Tuple, Union
 
 import pydantic
 from google.cloud.firestore_v1.field_path import FieldPath
+from google.cloud.firestore_v1.transforms import Sentinel, _NumericValue, _ValueList
 
 OrderDirection = Union[Literal["ASCENDING"], Literal["DESCENDING"]]
 
@@ -30,6 +31,61 @@ def collection_group_index(*fields: IndexField) -> IndexDefinition:
     :return: IndexDefinition tuple
     """
     return IndexDefinition(query_scope="COLLECTION_GROUP", fields=fields)
+
+
+def quote_field_names(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Quotes the keys of `data` as Firestore field paths, so that `update()` treats each
+    key as one field even if it contains dots or other special characters.
+
+    :param data: Data keyed by field names.
+    :return: The same data keyed by field paths.
+    """
+    return {FieldPath(key).to_api_repr(): value for key, value in data.items()}
+
+
+def is_transform(value: Any) -> bool:
+    """
+    Returns whether `value` is a Firestore transform, such as `DELETE_FIELD`,
+    `SERVER_TIMESTAMP`, `ArrayUnion` or `Increment`, which Firestore applies to the
+    stored value instead of storing it.
+    """
+    return isinstance(value, (Sentinel, _ValueList, _NumericValue))
+
+
+def set_path_value(data: Dict[str, Any], path: str, value: Any) -> None:
+    """
+    Sets the value at the Firestore field path `path` in `data` the way Firestore's
+    `update()` does: missing or non-map values along the path are replaced with maps.
+
+    :param data: Document data, e.g. from `model_dump(by_alias=True)`.
+    :param path: Firestore field path, e.g. "stock" or "stats.visits".
+    :param value: Value to set.
+    """
+    *parents, key = FieldPath.from_string(path).parts
+    target = data
+    for part in parents:
+        child = target.get(part)
+        if not isinstance(child, dict):
+            child = target[part] = {}
+        target = child
+    target[key] = value
+
+
+def get_path_value(data: Dict[str, Any], path: str) -> Tuple[bool, Any]:
+    """
+    Returns whether `data` has a value at the Firestore field path `path`, and the
+    value.
+
+    :param data: Document data, e.g. from `model_dump(by_alias=True)`.
+    :param path: Firestore field path, e.g. "stock" or "stats.visits".
+    """
+    target: Any = data
+    for part in FieldPath.from_string(path).parts:
+        if not isinstance(target, dict) or part not in target:
+            return False, None
+        target = target[part]
+    return True, target
 
 
 def increment_locally(model: pydantic.BaseModel, field: str, amount: Union[int, float]) -> None:
