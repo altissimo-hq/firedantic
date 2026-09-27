@@ -14,7 +14,7 @@ from firedantic import (
     collection_group_index,
 )
 from firedantic.common import IndexField
-from firedantic.configurations import configuration
+from firedantic.configurations import configuration, get_async_batch, get_async_transaction
 from firedantic.exceptions import ModelNotFoundError
 
 
@@ -172,6 +172,60 @@ async def test_find_in_group_without_discriminator() -> None:
     # Surveys under sites/ and the top-level surveys are outside animals/
     assert sorted(s.score for s in surveys) == [10, 11, 12, 20, 21, 22]
 
+
+@pytest.mark.asyncio
+async def test_delete_recursive() -> None:
+    animals = await _create_surveys()
+    survey = (await AnimalSurvey.model_for(animals[0]).find())[0]
+    note_ref = survey._get_doc_ref().collection("notes").document("note")
+    await note_ref.set({"text": "two levels down"})
+
+    deleted = await animals[0].delete(recursive=True)
+
+    # The animal, its 3 surveys and the note
+    assert deleted == 5
+    assert not (await note_ref.get()).exists
+    assert await AnimalSurvey.count_in_group() == 3
+    surveys = await AnimalSurvey.find_in_group()
+    assert {s.get_parent_id() for s in surveys} == {animals[1].id}
+    assert [a.id for a in await Animal.find()] == [animals[1].id]
+
+
+@pytest.mark.asyncio
+async def test_delete_keeps_subcollections() -> None:
+    animals = await _create_surveys()
+
+    assert await animals[0].delete() is None
+
+    assert [a.id for a in await Animal.find()] == [animals[1].id]
+    # Firestore doesn't delete subcollections with their parent document
+    assert await AnimalSurvey.count_in_group() == 6
+
+
+@pytest.mark.asyncio
+async def test_delete_recursive_in_transaction() -> None:
+    animals = await _create_surveys()
+
+    with pytest.raises(ValueError):
+        await animals[0].delete(transaction=get_async_transaction(), recursive=True)
+    with pytest.raises(ValueError):
+        await animals[0].delete(batch=get_async_batch(), recursive=True)
+
+    assert len(await Animal.find()) == 2
+    assert await AnimalSurvey.count_in_group() == 6
+
+
+@pytest.mark.asyncio
+async def test_delete_recursive_found_in_group() -> None:
+    await _create_surveys()
+    survey = (await AnimalSurvey.find_in_group(order_by=[("score", Query.ASCENDING)]))[0]
+    await survey._get_doc_ref().collection("notes").document("note").set({"text": "hi"})
+
+    deleted = await survey.delete(recursive=True)
+
+    assert deleted == 2
+    surveys = await AnimalSurvey.find_in_group(order_by=[("score", Query.ASCENDING)])
+    assert [s.score for s in surveys] == [11, 12, 20, 21, 22]
 
 
 @pytest.mark.asyncio

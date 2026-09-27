@@ -7,6 +7,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Added a `recursive` option to `delete()`, which also deletes the documents in all
+  subcollections below the model's document and returns the number of deleted documents.
+  Firestore doesn't delete subcollections with their parent, so without it they are left
+  behind and still found by collection group queries. It's not atomic and raises
+  `ValueError` in a transaction or batch.
+
 ## [0.18.0] - 2026-09-27
 
 ### Added

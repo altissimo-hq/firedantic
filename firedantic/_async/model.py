@@ -433,21 +433,36 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         transaction: Optional[AsyncTransaction] = None,
         *,
         batch: Optional[AsyncWriteBatch] = None,
-    ) -> None:
+        recursive: bool = False,
+    ) -> Optional[int]:
         """
         Deletes this specific model instance from the database.
 
+        Firestore doesn't delete subcollections with their parent document. With
+        `recursive=True` the documents in all subcollections below this one are deleted
+        too, in batches. That is not atomic, so it can't be used in a transaction or
+        batch.
+
         :param transaction: Optional transaction to use.
         :param batch: Optional write batch to add the write to.
+        :param recursive: Also delete all documents in subcollections below this one.
+        :return: Number of deleted documents with `recursive=True`, otherwise None.
         :raise DocumentIDError: If the ID is not valid.
+        :raise ValueError: If `recursive=True` is used with a transaction or batch.
         """
         writer = get_writer(transaction, batch)
         doc_ref = self._get_doc_ref()
+        if recursive:
+            if writer is not None:
+                raise ValueError("Recursive delete can not be used in a transaction or batch")
+            client = configuration.get_async_client(self.__db_config__)
+            return await client.recursive_delete(doc_ref)
         if writer is not None:
             # Like save(): the transaction or batch must come from the same client
             writer.delete(doc_ref)
-            return
+            return None
         await doc_ref.delete()
+        return None
 
     async def reload(self, transaction: Optional[AsyncTransaction] = None) -> None:
         """

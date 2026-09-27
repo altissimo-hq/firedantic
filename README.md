@@ -323,6 +323,18 @@ async def get_user_purchases(user_id: str, period: str = "2021") -> int:
 
 ```
 
+Firestore doesn't delete subcollections when their parent document is deleted, and the
+documents left behind are still found by collection group queries. Use
+`delete(recursive=True)` to delete a document together with everything below it:
+
+```python
+deleted = await user.delete(recursive=True)  # the user, its stats and their subcollections
+print(f"Deleted {deleted} documents")
+```
+
+The documents are deleted in batches, so a recursive delete isn't atomic and can't be
+used in a transaction or a batched write.
+
 ## Collection group queries
 
 A
