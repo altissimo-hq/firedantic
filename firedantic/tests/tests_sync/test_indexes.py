@@ -283,3 +283,48 @@ def test_same_fields_in_another_collection(mock_admin_client) -> None:
         client=mock_admin_client,
     )
     assert len(result) == 1
+
+
+
+def test_index_in_collection_with_longer_name(mock_admin_client) -> None:
+    configuration.add(
+        name="(default)", prefix="test_", project="proj", client=mock_admin_client
+    )
+    expected_prefix = configuration.get_config("(default)").prefix
+
+    # An index of "modelWithIndexes_archive" must not count as an index of
+    # "modelWithIndexes", even though the collection group path is a prefix of its name
+    resp = ListIndexesResponse(
+        {
+            "indexes": [
+                {
+                    "name": (
+                        "projects/fake-project/databases/(default)/collectionGroups/"
+                        f"{expected_prefix}modelWithIndexes_archive/123456"
+                    ),
+                    "query_scope": "COLLECTION",
+                    "fields": [
+                        {"field_path": "name", "order": Query.ASCENDING},
+                        {"field_path": "age", "order": Query.DESCENDING},
+                        {"field_path": "__name__", "order": Query.ASCENDING},
+                    ],
+                },
+            ]
+        }
+    )
+    mock_admin_client.list_indexes = Mock(return_value=MockListIndexOperation([resp]))
+
+    class ModelWithIndexes(BaseModelWithIndexes):
+        __composite_indexes__ = (
+            collection_index(
+                IndexField("name", Query.ASCENDING),
+                IndexField("age", Query.DESCENDING),
+            ),
+        )
+
+    result = set_up_composite_indexes(
+        gcloud_project="fake-project",
+        models=[ModelWithIndexes],
+        client=mock_admin_client,
+    )
+    assert len(result) == 1

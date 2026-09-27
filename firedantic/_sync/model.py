@@ -151,8 +151,9 @@ class BareModel(pydantic.BaseModel, ABC):
         data = self.model_dump(
             by_alias=True, exclude_unset=exclude_unset, exclude_none=exclude_none
         )
-        if self.__document_id__ in data:
-            del data[self.__document_id__]
+        # The ID is the document name, not part of the data; drop it by the key
+        # model_dump() used for it, which is its alias if it has one
+        data.pop(self._get_document_id_key(), None)
 
         client = configuration.get_client(resolved)
         if client is None:
@@ -188,63 +189,10 @@ class BareModel(pydantic.BaseModel, ABC):
         :raise DocumentIDError: If the ID is not valid.
         """
         doc_ref = self._get_doc_ref()
-
-        # try to extract client-like objects
-        doc_client = getattr(doc_ref, "_client", None) or getattr(doc_ref, "client", None)
-        tx_client = (
-            getattr(transaction, "_client", None) or getattr(transaction, "_client_async", None)
-            if transaction is not None
-            else None
-        )
-
         if transaction is not None:
-            # Defensive check: make sure the doc_ref is built from same client as the transaction.
-            tx_client = getattr(transaction, "_client", None) or getattr(
-                transaction, "_client_async", None
-            )
-            doc_client = getattr(doc_ref, "_client", None) or getattr(doc_ref, "client", None)
-
-            # If both sides expose client objects, ensure they are same identity.
-            if tx_client is not None and doc_client is not None and tx_client is not doc_client:
-                # Try to rebuild a document reference from the transaction's client using the same path
-                path = getattr(doc_ref, "path", None)
-                if path is None:
-                    raise RuntimeError(
-                        "Cannot resolve document path to rebuild doc_ref for transaction."
-                    )
-
-                # For most firestores clients, client.document(path) works for sync client;
-                # for async, we try client.document(path) as well (it usually exists).
-                try:
-                    # prefer a method that accepts full path
-                    alt_doc_ref = None
-                    if hasattr(tx_client, "document"):
-                        alt_doc_ref = tx_client.document(path)
-                    elif hasattr(tx_client, "collection"):
-                        # fallback: split path to collection and doc id
-                        parts = path.split("/")
-                        if len(parts) >= 2:
-                            collection_path = "/".join(parts[:-1])
-                            doc_id = parts[-1]
-                            alt_doc_ref = tx_client.collection(collection_path).document(doc_id)
-                    if alt_doc_ref is None:
-                        raise RuntimeError(
-                            "Could not rebuild document reference from transaction client."
-                        )
-                    doc_ref = alt_doc_ref
-
-                except Exception as exc:
-                    raise RuntimeError(
-                        "Document reference was created from a different Firestore client than "
-                        "the provided transaction. Recreate doc_ref from the transaction's client "
-                        "or call delete() without a transaction."
-                    ) from exc
-
-            # schedule delete on the transaction (this will be committed on transaction commit)
+            # Like save(): the transaction must come from the same client as the model
             transaction.delete(doc_ref)
             return
-
-        # no transaction: do a direct delete
         doc_ref.delete()
 
     def reload(self, transaction: Optional[Transaction] = None) -> None:
@@ -278,6 +226,16 @@ class BareModel(pydantic.BaseModel, ABC):
             self._validate_document_id(doc_id)
         return getattr(self, self.__document_id__, None)
 
+    @classmethod
+    def _get_document_id_key(cls) -> str:
+        """
+        Returns the key under which `model_dump(by_alias=True)` puts the document ID.
+        """
+        field = cls.model_fields.get(cls.__document_id__)
+        if field is None:
+            return cls.__document_id__
+        return field.serialization_alias or field.alias or cls.__document_id__
+
     def get_document_path(self) -> Optional[str]:
         """
         Returns the full document path of this model instance, e.g.
@@ -292,18 +250,13 @@ class BareModel(pydantic.BaseModel, ABC):
     @classmethod
     def delete_all(cls, config_name: Optional[str] = None) -> None:
         """
-        Deletes all models of this type from the database.
+        Deletes all models of this type from the database, in batches.
+
+        :param config_name: Configuration to use instead of the model's `__db_config__`.
         """
-
-        # Resolve config to use (explicit -> instance -> class -> default)
-        config_name = cls.__db_config__
-
-        client = configuration.get_client(config_name)
-        col_name = get_collection_name(cls)
-        col_ref = client.collection(col_name)
-
-        for doc in col_ref.stream():
-            doc.reference.delete()
+        client = configuration.get_client(config_name or cls.__db_config__)
+        col_ref = client.collection(get_collection_name(cls))
+        truncate_collection(col_ref)
 
     @classmethod
     def find(  # pylint: disable=too-many-arguments
@@ -709,7 +662,7 @@ class BareModel(pydantic.BaseModel, ABC):
         """
         return get_collection_name(cls, cls.__collection__)
 
-    def _get_doc_ref(self, config_name: Optional[str] = "(default)") -> DocumentReference:
+    def _get_doc_ref(self) -> DocumentReference:
         """
         Returns the document reference.
 

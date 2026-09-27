@@ -7,6 +7,30 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- `truncate_collection()` and `delete_all()` delete documents with batched writes
+  instead of one request per document.
+- `delete_all(config_name=...)` now uses the given configuration; it was ignored.
+- `delete(transaction=...)` no longer tries to rebuild the document reference from the
+  transaction's client. Like `save()`, the transaction must come from the model's
+  client.
+- Lazily created async clients are recreated when used from a different event loop than
+  the one they were created on, e.g. across `asyncio.run()` calls. Clients passed to
+  `configuration.add()` are never replaced.
+- `configuration.get_collection_name()`, `get_collection_ref()` and
+  `get_async_collection_ref()` follow the same rules as the model methods: they use the
+  model's `__db_config__` by default, create clients lazily, and raise
+  `CollectionNotDefined` instead of deriving a name from the class name.
+- Pinned the GitHub Actions in both workflows to current releases.
+
+### Fixed
+
+- `save()` no longer writes the document ID into the document when the ID field has an
+  alias.
+- `set_up_composite_indexes` no longer treats an index of a collection group with a
+  longer name (e.g. `surveys_archive`) as an existing index of `surveys`.
+
 ## [0.14.0] - 2026-09-27
 
 ### Added

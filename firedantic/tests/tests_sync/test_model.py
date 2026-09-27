@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from google.cloud.firestore import Query, transactional
 from google.cloud.firestore_v1.transaction import Transaction
-from pydantic import Field, ValidationError
+from pydantic import ConfigDict, Field, ValidationError
 
 import firedantic.operators as op
 from firedantic import Model, SubCollection, SubModel, get_transaction
@@ -667,3 +667,25 @@ def test_model_for_validates_template_values():
     # An unsaved parent has no ID to build the path from
     with pytest.raises(InvalidDocumentID, match="None"):
         UserStats.model_for(User(name="unsaved"))
+
+
+
+def test_save_with_aliased_document_id():
+    class AliasedIdModel(Model):
+        __collection__ = "aliasedIdModels"
+        model_config = ConfigDict(populate_by_name=True)
+
+        id: Optional[str] = Field(default=None, alias="docId")
+        name: str
+
+    model = AliasedIdModel(name="x")
+    model.save()
+    assert model.id
+
+    # The ID is the document name only, not stored under its alias in the data
+    snapshot = AliasedIdModel._get_col_ref().document(model.id).get()
+    assert snapshot.to_dict() == {"name": "x"}
+
+    loaded = AliasedIdModel.get_by_id(model.id)
+    assert loaded.id == model.id
+    assert loaded.name == "x"

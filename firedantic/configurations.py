@@ -1,3 +1,4 @@
+import asyncio
 import warnings
 from os import environ
 from typing import Any, Dict, Optional, Type, Union
@@ -12,12 +13,15 @@ from google.cloud.firestore_admin_v1.services.firestore_admin.transports.base im
 )
 from google.cloud.firestore_v1 import (
     AsyncClient,
+    AsyncCollectionReference,
     AsyncTransaction,
     Client,
     CollectionReference,
     Transaction,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from firedantic.exceptions import CollectionNotDefined
 
 # --- Old compatibility surface (kept for backwards compatibility) ---
 CONFIGURATIONS: Dict[str, Any] = {}
@@ -84,7 +88,33 @@ class ConfigItem(BaseModel):
     client_options: Optional[Union[Dict[str, Any], Any]] = None
     admin_transport: Optional[Any] = None
 
+    # Event loops the lazily created async clients are bound to. A client can't be
+    # used from another loop, so it's recreated when the loop changes. Clients passed
+    # in by the caller have no recorded loop and are never replaced.
+    async_client_loop: Optional[Any] = Field(default=None, exclude=True, repr=False)
+    async_admin_client_loop: Optional[Any] = Field(default=None, exclude=True, repr=False)
+
     model_config = {"arbitrary_types_allowed": True}
+
+
+def _current_loop() -> Optional[asyncio.AbstractEventLoop]:
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+
+
+def _bound_to_other_loop(loop: Optional[asyncio.AbstractEventLoop]) -> bool:
+    """
+    Whether a lazily created async client bound to `loop` can't be used now, because
+    that loop is closed or a different loop is running.
+    """
+    if loop is None:
+        return False
+    if loop.is_closed():
+        return True
+    current = _current_loop()
+    return current is not None and current is not loop
 
 
 class Configuration:
@@ -207,6 +237,8 @@ class Configuration:
         resolved = name if name is not None else "(default)"
         cfg = self.get_config(resolved)
 
+        if cfg.async_client is not None and _bound_to_other_loop(cfg.async_client_loop):
+            cfg.async_client = None
         if cfg.async_client is None:
             if cfg.project is None:
                 raise RuntimeError(
@@ -221,6 +253,7 @@ class Configuration:
                 client_info=cfg.client_info,
                 client_options=cfg.client_options,  # type: ignore[arg-type]
             )
+            cfg.async_client_loop = _current_loop()
         return cfg.async_client
 
     # admin client accessor (lazy-create)
@@ -242,6 +275,8 @@ class Configuration:
         resolved = name if name is not None else "(default)"
         cfg = self.get_config(resolved)
 
+        if cfg.async_admin_client is not None and _bound_to_other_loop(cfg.async_admin_client_loop):
+            cfg.async_admin_client = None
         if cfg.async_admin_client is None:
             cfg.async_admin_client = FirestoreAdminAsyncClient(
                 credentials=cfg.credentials,
@@ -249,6 +284,7 @@ class Configuration:
                 client_options=cfg.client_options,  # type: ignore[arg-type]
                 client_info=cfg.client_info or DEFAULT_CLIENT_INFO,
             )
+            cfg.async_admin_client_loop = _current_loop()
         return cfg.async_admin_client
 
     # transactions
@@ -259,47 +295,46 @@ class Configuration:
         return self.get_async_client(name=name).transaction()
 
     # helpers for models to derive collection name / reference
+    @staticmethod
+    def _resolve_model_config(model_class: Type, config_name: Optional[str]) -> str:
+        if config_name is not None:
+            return config_name
+        return str(getattr(model_class, "__db_config__", "(default)"))
+
     def get_collection_name(self, model_class: Type, config_name: Optional[str] = None) -> str:
         """
-        Return the collection name string (prefix + model name).
-        """
-        resolved = config_name if config_name is not None else "(default)"
-        cfg = self.get_config(resolved)
-        prefix = cfg.prefix or ""
+        Return the prefixed collection name for `model_class`, using the prefix of
+        `config_name` or, by default, of the model's `__db_config__`. Same rules as
+        `model_class.get_collection_name()`.
 
-        if hasattr(model_class, "__collection__"):
-            return str(prefix + model_class.__collection__)
-        else:
-            model_name = model_class.__name__
-            return f"{prefix}{model_name[0].lower()}{model_name[1:]}"  # (lower case first letter of model name)
+        :raises CollectionNotDefined: If the model has no `__collection__`.
+        """
+        resolved = self._resolve_model_config(model_class, config_name)
+        collection = getattr(model_class, "__collection__", None)
+        if not collection:
+            raise CollectionNotDefined(f"Missing collection name for {model_class.__name__}")
+        return f"{self.get_config(resolved).prefix or ''}{collection}"
 
     def get_collection_ref(
         self, model_class: Type, name: Optional[str] = None
     ) -> CollectionReference:
         """
-        Return a CollectionReference for the given model_class using the sync client.
+        Return a CollectionReference for `model_class` using the (lazily created) sync client.
         """
-        resolved = name if name is not None else "(default)"
-        cfg = self.get_config(resolved)
-        client = cfg.client
-        if client is None:
-            raise RuntimeError(f"No sync client configured for config '{resolved}'")
-        collection_name = self.get_collection_name(model_class, resolved)
-        return client.collection(collection_name)  # type: ignore[no-any-return]
+        resolved = self._resolve_model_config(model_class, name)
+        return self.get_client(resolved).collection(self.get_collection_name(model_class, resolved))
 
-    def get_async_collection_ref(self, model_class: Type, name: Optional[str] = None):
+    def get_async_collection_ref(
+        self, model_class: Type, name: Optional[str] = None
+    ) -> AsyncCollectionReference:
         """
-        Return an AsyncCollectionReference using the async client.
+        Return an AsyncCollectionReference for `model_class` using the (lazily created)
+        async client.
         """
-        resolved = name if name is not None else "(default)"
-        cfg = self.get_config(resolved)
-        async_client = cfg.async_client
-        if async_client is None:
-            raise RuntimeError(f"No async client configured for config '{resolved}'")
-
-        collection_name = self.get_collection_name(model_class, resolved)
-
-        return async_client.collection(collection_name)
+        resolved = self._resolve_model_config(model_class, name)
+        return self.get_async_client(resolved).collection(
+            self.get_collection_name(model_class, resolved)
+        )
 
 
 # make the module-level singleton available to models/tests

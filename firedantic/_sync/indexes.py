@@ -36,8 +36,9 @@ def get_existing_indexes(client: FirestoreAdminClient, path: str) -> Set[IndexDe
 
     indexes = set()
     for raw_index in raw_indexes:
-        # apparently `list_indexes` returns all indexes in all collections
-        if not raw_index.name.startswith(path):
+        # apparently `list_indexes` returns all indexes in all collections; match the
+        # whole collection group ID, so "surveys" doesn't match "surveys_archive"
+        if not raw_index.name.startswith(path + "/"):
             continue
         query_scope = raw_index.query_scope.name
         fields = tuple(
