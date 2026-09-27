@@ -1,4 +1,5 @@
 from operator import attrgetter
+from typing import Optional
 from uuid import uuid4
 
 import pytest
@@ -7,7 +8,7 @@ from google.cloud.firestore_v1.async_transaction import AsyncTransaction
 from pydantic import Field, ValidationError
 
 import firedantic.operators as op
-from firedantic import AsyncModel, get_async_transaction
+from firedantic import AsyncModel, AsyncSubCollection, AsyncSubModel, get_async_transaction
 from firedantic.configurations import configuration
 from firedantic.exceptions import (
     CollectionNotDefined,
@@ -639,3 +640,30 @@ async def test_update_submodel_in_transaction() -> None:
     assert isinstance(user_stats, UserStats)
     assert user_stats.purchases == 43
     assert await get_user_purchases(u.id) == 43
+
+
+@pytest.mark.asyncio
+async def test_model_for_validates_template_values():
+    class Org(AsyncModel):
+        __collection__ = "orgs"
+        slug: str
+
+    class OrgItem(AsyncSubModel):
+        id: Optional[str] = None
+        value: int = 0
+
+        class Collection(AsyncSubCollection):
+            __collection_tpl__ = "orgs/{slug}/items"
+
+    assert OrgItem.model_for(Org(slug="acme")).get_collection_name().endswith("orgs/acme/items")
+
+    # A value with a slash would point at another document's subcollection
+    with pytest.raises(InvalidDocumentID, match="orgs/{slug}/items"):
+        OrgItem.model_for(Org(slug="victim/items/evil"))
+    for bad in ("", ".", "..", "__x__"):
+        with pytest.raises(InvalidDocumentID):
+            OrgItem.model_for(Org(slug=bad))
+
+    # An unsaved parent has no ID to build the path from
+    with pytest.raises(InvalidDocumentID, match="None"):
+        UserStats.model_for(User(name="unsaved"))

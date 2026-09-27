@@ -1,8 +1,22 @@
+from datetime import datetime
+from typing import Optional
+
 import pytest
 from google.cloud.firestore_admin_v1 import Field
 
-from firedantic import async_set_up_ttl_policies
+from firedantic import AsyncSubCollection, AsyncSubModel, async_set_up_ttl_policies
+from firedantic.configurations import configuration
 from firedantic.tests.tests_async.conftest import ExpiringModel
+
+
+class ExpiringSubModel(AsyncSubModel):
+    __ttl_field__ = "expire"
+
+    id: Optional[str] = None
+    expire: datetime
+
+    class Collection(AsyncSubCollection):
+        __collection_tpl__ = "expiringModel/{id}/expiringSubModel"
 
 
 @pytest.mark.asyncio
@@ -36,3 +50,19 @@ async def test_set_up_ttl_policies_other_states(mock_admin_client, state):
     assert len(result) == 0
     # Ensure no update action was done either
     assert mock_admin_client.updated_field is None
+
+
+@pytest.mark.asyncio
+async def test_set_up_ttl_policies_field_paths(mock_admin_client):
+    result = await async_set_up_ttl_policies(
+        gcloud_project="fake-project",
+        models=[ExpiringModel, ExpiringSubModel],
+        client=mock_admin_client,
+    )
+    assert len(result) == 2
+    # Both top-level models and sub-models use the collection group ID
+    prefix = configuration.get_config("(default)").prefix
+    assert mock_admin_client.get_field_names == [
+        f"projects/fake-project/databases/(default)/collectionGroups/{prefix}expiringModel/fields/expire",
+        "projects/fake-project/databases/(default)/collectionGroups/expiringSubModel/fields/expire",
+    ]

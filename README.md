@@ -298,8 +298,12 @@ offset also counts documents skipped by the path check.
 Collection group queries need indexes with collection group scope, which can be defined
 with `collection_group_index(...)` as described below. Filtering on a single field also
 needs a single-field index with collection group scope, which Firestore doesn't create
-automatically. When a required index is missing, the error message from Firestore
-includes a link to create it.
+automatically. Because the path restriction is a range filter on the document name,
+Firestore can't combine single-field indexes for these queries: every filter or sort
+shape used with `find_in_group()`, including plain equality filters, needs its own
+composite index with collection group scope, with `__discriminator__` as the first field
+if set. When a required index is missing, the error message from Firestore includes a
+link to create it.
 
 ## Composite Indexes and TTL Policies
 

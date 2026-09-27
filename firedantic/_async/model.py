@@ -780,11 +780,32 @@ class AsyncBareSubCollection(ABC):
         Returns the model for this subcollection.
         """
         parent_props = parent.model_dump(by_alias=True)
+        template = cls.__collection_tpl__
+        if not template:
+            raise CollectionNotDefined(f"Missing __collection_tpl__ for {cls.__name__}")
+
+        # Every placeholder becomes a document ID in the collection path, so it must
+        # be a valid one: a value containing "/" would silently point the model at a
+        # different document's subcollection
+        formatter = Formatter()
+        for _, field_name, _, _ in formatter.parse(template):
+            if field_name is None:
+                continue
+            value, _ = formatter.get_field(field_name, (), parent_props)
+            try:
+                if value is None:
+                    raise InvalidDocumentID("Document ID cannot be None")
+                AsyncBareModel._validate_document_id(str(value))
+            except InvalidDocumentID as e:
+                raise InvalidDocumentID(
+                    f"Invalid value {value!r} for '{{{field_name}}}' in "
+                    f"{cls.__name__}.__collection_tpl__ '{template}': {e}"
+                ) from e
 
         name = model_class.__name__
         ic = type(name, (model_class,), {})
         ic.__collection_cls__ = cls
-        ic.__collection__ = cls.__collection_tpl__.format(**parent_props)
+        ic.__collection__ = template.format(**parent_props)
         ic.__document_id__ = cls.__document_id__
         # A subcollection lives under its parent document, so it must use the
         # parent's database config; any __db_config__ on model_class is ignored.

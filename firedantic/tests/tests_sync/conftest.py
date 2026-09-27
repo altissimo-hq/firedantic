@@ -277,6 +277,7 @@ class MockFirestoreAdminClient:
             Field.TtlConfig.State.STATE_UNSPECIFIED  # type: ignore
         )
         self.updated_field = None
+        self.get_field_names: list = []
         self.list_indexes = Mock(return_value=MockListIndexOperation([]))
         self.create_index = Mock()
 
@@ -295,7 +296,8 @@ class MockFirestoreAdminClient:
         def __init__(self, state_getter):
             self.ttl_config = self.MockTTLConfig(state_getter)
 
-    def get_field(self, *args, **kwargs) -> MockField:
+    def get_field(self, request, *args, **kwargs) -> MockField:
+        self.get_field_names.append(request["name"])
         return self.MockField(self.get_field_state)
 
     def update_field(self, data) -> MockOperation:

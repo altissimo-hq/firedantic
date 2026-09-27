@@ -35,11 +35,15 @@ def set_up_ttl_policies(
         if not model.__ttl_field__:
             continue
 
+        # TTL policies are set per collection group, so for sub-models this is the
+        # last segment of the collection template
+        collection_group = model.get_collection_group_id()
+
         # Get current details of the field
         path = client.field_path(
             project=gcloud_project,
             database=database,
-            collection=model.get_collection_name(),
+            collection=collection_group,
             field=model.__ttl_field__,
         )
         field_obj = client.get_field({"name": path})
@@ -48,8 +52,8 @@ def set_up_ttl_policies(
         readable_state = str(field_obj.ttl_config.state).removeprefix("State.")
         log_str = '"%s", collection: "%s", field: "%s", state: "%s"'
         log_params = [
-            model.__class__.__name__,
-            model.get_collection_name(),
+            model.__name__,
+            collection_group,
             model.__ttl_field__,
             readable_state,
         ]
