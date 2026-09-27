@@ -10,7 +10,13 @@ from google.cloud.firestore_v1.async_transaction import AsyncTransaction
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 import firedantic.operators as op
-from firedantic import AsyncModel, AsyncSubCollection, AsyncSubModel, get_async_transaction
+from firedantic import (
+    AsyncModel,
+    AsyncSubCollection,
+    AsyncSubModel,
+    get_async_batch,
+    get_async_transaction,
+)
 from firedantic.configurations import configuration
 from firedantic.exceptions import (
     CollectionNotDefined,
@@ -571,6 +577,56 @@ async def test_update_changes_in_transaction() -> None:
     assert counter.stats.visits == 0
     await counter.reload()
     assert counter.stats.visits == 2
+
+
+@pytest.mark.asyncio
+async def test_batch(create_product) -> None:
+    existing = await create_product(product_id="existing", stock=1)
+    to_delete = await create_product(product_id="to-delete")
+    assert existing.id and to_delete.id
+
+    batch = get_async_batch()
+    new = Product(product_id="new", price=1.0, stock=5)
+    await new.save(batch=batch)
+    created = Product(product_id="created", price=1.0, stock=6)
+    await created.create(batch=batch)
+    await existing.update({"price": 9.0}, batch=batch)
+    await existing.increment("stock", 2, batch=batch)
+    await to_delete.delete(batch=batch)
+
+    # The IDs are known right away, but nothing is written until the commit
+    assert new.id and created.id
+    assert await Product.count() == 2
+    # Like in a transaction, the instance is left unchanged
+    assert existing.price == 1.23
+    assert existing.stock == 1
+
+    await batch.commit()
+    assert await Product.get_by_id(new.id) == new
+    assert await Product.get_by_id(created.id) == created
+    stored = await Product.get_by_id(existing.id)
+    assert (stored.price, stored.stock) == (9.0, 3)
+    assert await Product.get_by_ids([to_delete.id]) == []
+
+
+@pytest.mark.asyncio
+async def test_batch_is_atomic(create_product) -> None:
+    existing = await create_product(product_id="existing")
+
+    batch = get_async_batch()
+    await Product(product_id="new", price=1.0, stock=1).save(batch=batch)
+    await Product(id=existing.id, product_id="dupe", price=1.0, stock=1).create(batch=batch)
+
+    with pytest.raises(AlreadyExists):
+        await batch.commit()
+    assert [p.product_id for p in await Product.find()] == ["existing"]
+
+
+@pytest.mark.asyncio
+async def test_batch_and_transaction() -> None:
+    product = Product(product_id="p", price=1.0, stock=1)
+    with pytest.raises(ValueError):
+        await product.save(transaction=get_async_transaction(), batch=get_async_batch())
 
 
 @pytest.mark.asyncio

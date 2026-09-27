@@ -10,7 +10,13 @@ from google.cloud.firestore_v1.transaction import Transaction
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 import firedantic.operators as op
-from firedantic import Model, SubCollection, SubModel, get_transaction
+from firedantic import (
+    Model,
+    SubCollection,
+    SubModel,
+    get_batch,
+    get_transaction,
+)
 from firedantic.configurations import configuration
 from firedantic.exceptions import (
     CollectionNotDefined,
@@ -571,6 +577,56 @@ def test_update_changes_in_transaction() -> None:
     assert counter.stats.visits == 0
     counter.reload()
     assert counter.stats.visits == 2
+
+
+
+def test_batch(create_product) -> None:
+    existing = create_product(product_id="existing", stock=1)
+    to_delete = create_product(product_id="to-delete")
+    assert existing.id and to_delete.id
+
+    batch = get_batch()
+    new = Product(product_id="new", price=1.0, stock=5)
+    new.save(batch=batch)
+    created = Product(product_id="created", price=1.0, stock=6)
+    created.create(batch=batch)
+    existing.update({"price": 9.0}, batch=batch)
+    existing.increment("stock", 2, batch=batch)
+    to_delete.delete(batch=batch)
+
+    # The IDs are known right away, but nothing is written until the commit
+    assert new.id and created.id
+    assert Product.count() == 2
+    # Like in a transaction, the instance is left unchanged
+    assert existing.price == 1.23
+    assert existing.stock == 1
+
+    batch.commit()
+    assert Product.get_by_id(new.id) == new
+    assert Product.get_by_id(created.id) == created
+    stored = Product.get_by_id(existing.id)
+    assert (stored.price, stored.stock) == (9.0, 3)
+    assert Product.get_by_ids([to_delete.id]) == []
+
+
+
+def test_batch_is_atomic(create_product) -> None:
+    existing = create_product(product_id="existing")
+
+    batch = get_batch()
+    Product(product_id="new", price=1.0, stock=1).save(batch=batch)
+    Product(id=existing.id, product_id="dupe", price=1.0, stock=1).create(batch=batch)
+
+    with pytest.raises(AlreadyExists):
+        batch.commit()
+    assert [p.product_id for p in Product.find()] == ["existing"]
+
+
+
+def test_batch_and_transaction() -> None:
+    product = Product(product_id="p", price=1.0, stock=1)
+    with pytest.raises(ValueError):
+        product.save(transaction=get_transaction(), batch=get_batch())
 
 
 

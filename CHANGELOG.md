@@ -9,6 +9,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Added batched writes: `save()`, `create()`, `update()`, `increment()` and `delete()`
+  take a `batch`, from the new `get_batch()` and `get_async_batch()` helpers, to add the
+  write to a Firestore write batch that is committed all at once.
 - Added a `start_after` cursor to `find()` for paging through results, like the one in
   `find_in_group()`. It takes a model from the previous page, its document ID or path,
   or a document snapshot.
