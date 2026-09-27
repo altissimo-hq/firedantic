@@ -15,9 +15,11 @@ from google.cloud.firestore_v1 import (
     AsyncClient,
     AsyncCollectionReference,
     AsyncTransaction,
+    AsyncWriteBatch,
     Client,
     CollectionReference,
     Transaction,
+    WriteBatch,
 )
 from pydantic import BaseModel, Field
 
@@ -62,6 +64,22 @@ def get_transaction() -> Transaction:
 def get_async_transaction() -> AsyncTransaction:
     """Backward-compatible async transaction getter, forwards to new implementation."""
     return configuration.get_async_transaction()
+
+
+def get_batch(config_name: Optional[str] = None) -> WriteBatch:
+    """
+    Returns a new sync write batch for the configuration. Pass it as `batch` to the
+    write methods of models, then call `commit()` to write everything at once.
+    """
+    return configuration.get_batch(config_name)
+
+
+def get_async_batch(config_name: Optional[str] = None) -> AsyncWriteBatch:
+    """
+    Returns a new async write batch for the configuration. Pass it as `batch` to the
+    write methods of models, then call `await commit()` to write everything at once.
+    """
+    return configuration.get_async_batch(config_name)
 
 
 # --- New configuration system ---
@@ -293,6 +311,13 @@ class Configuration:
 
     def get_async_transaction(self, name: Optional[str] = None) -> AsyncTransaction:
         return self.get_async_client(name=name).transaction()
+
+    # batched writes
+    def get_batch(self, name: Optional[str] = None) -> WriteBatch:
+        return self.get_client(name=name).batch()
+
+    def get_async_batch(self, name: Optional[str] = None) -> AsyncWriteBatch:
+        return self.get_async_client(name=name).batch()
 
     # helpers for models to derive collection name / reference
     @staticmethod

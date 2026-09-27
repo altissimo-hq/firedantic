@@ -20,6 +20,7 @@ from google.cloud.firestore_v1 import (
     And,
     AsyncCollectionReference,
     AsyncDocumentReference,
+    AsyncWriteBatch,
     DocumentSnapshot,
     FieldFilter,
     Increment,
@@ -121,6 +122,20 @@ def _get_col_ref(cls, collection_name: Optional[str] = None) -> AsyncCollectionR
     return col_ref
 
 
+def get_writer(
+    transaction: Optional[AsyncTransaction], batch: Optional[AsyncWriteBatch]
+) -> Optional[AsyncWriteBatch]:
+    """
+    Returns the transaction or batch to add a write to, or None to write directly.
+    Transactions are write batches too, with the same methods for adding writes.
+
+    :raise ValueError: If both a transaction and a batch are given.
+    """
+    if transaction is not None and batch is not None:
+        raise ValueError("Pass either a transaction or a batch, not both")
+    return transaction if transaction is not None else batch
+
+
 class AsyncBareModel(pydantic.BaseModel, ABC):
     """
     Base model class.
@@ -154,6 +169,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         exclude_none: bool = False,
         merge: bool = False,
         transaction: Optional[AsyncTransaction] = None,
+        batch: Optional[AsyncWriteBatch] = None,
     ) -> None:
         """
         Saves this model in the database.
@@ -168,14 +184,15 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         :param merge: Whether to merge the fields into the stored document instead of
             replacing it.
         :param transaction: Optional transaction to use.
+        :param batch: Optional write batch to add the write to.
         :raise DocumentIDError: If the document ID is not valid.
         """
+        writer = get_writer(transaction, batch)
         doc_ref, data = self._prepare_write(config_name, exclude_unset, exclude_none)
 
-        # Use transaction if provided (assume it's compatible) otherwise do direct await set
-        if transaction is not None:
-            # Transaction.delete/set expects DocumentReference from the same client.
-            transaction.set(doc_ref, data, merge=merge)
+        # The transaction or batch must come from the same client as the model
+        if writer is not None:
+            writer.set(doc_ref, data, merge=merge)
         else:
             await doc_ref.set(data, merge=merge)
 
@@ -188,6 +205,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         exclude_unset: bool = False,
         exclude_none: bool = False,
         transaction: Optional[AsyncTransaction] = None,
+        batch: Optional[AsyncWriteBatch] = None,
     ) -> None:
         """
         Saves this model in the database as a new document. Unlike `save()`, this fails
@@ -199,13 +217,16 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         :param exclude_none: Whether to exclude fields that have a value of `None`.
         :param transaction: Optional transaction to use. The check for an existing
             document happens when the transaction commits.
+        :param batch: Optional write batch to add the write to. The check for an
+            existing document happens when the batch commits.
         :raise DocumentIDError: If the document ID is not valid.
         :raise google.api_core.exceptions.AlreadyExists: If the document already exists.
         """
+        writer = get_writer(transaction, batch)
         doc_ref, data = self._prepare_write(config_name, exclude_unset, exclude_none)
 
-        if transaction is not None:
-            transaction.create(doc_ref, data)
+        if writer is not None:
+            writer.create(doc_ref, data)
         else:
             await doc_ref.create(data)
 
@@ -213,18 +234,27 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
 
     @overload
     async def update(
-        self, *fields: str, transaction: Optional[AsyncTransaction] = None
+        self,
+        *fields: str,
+        transaction: Optional[AsyncTransaction] = None,
+        batch: Optional[AsyncWriteBatch] = None,
     ) -> None: ...
 
     @overload
     async def update(
-        self, changes: Dict[str, Any], /, *, transaction: Optional[AsyncTransaction] = None
+        self,
+        changes: Dict[str, Any],
+        /,
+        *,
+        transaction: Optional[AsyncTransaction] = None,
+        batch: Optional[AsyncWriteBatch] = None,
     ) -> None: ...
 
     async def update(
         self,
         *fields: Union[str, Dict[str, Any]],
         transaction: Optional[AsyncTransaction] = None,
+        batch: Optional[AsyncWriteBatch] = None,
     ) -> None:
         """
         Updates fields of the stored document, leaving its other fields as they are.
@@ -239,19 +269,21 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         instance after they are written. Firestore transforms such as `DELETE_FIELD`,
         `SERVER_TIMESTAMP` and `ArrayUnion` are written as they are, but only
         `Increment` is applied to the instance, so use `reload()` to see the others.
-        In a transaction the instance is left unchanged, since the write only happens
-        when the transaction commits.
+        In a transaction or batch the instance is left unchanged, since the write only
+        happens when the transaction or batch commits.
 
         Examples: `product.stock = 5; product.update("stock")` and
         `counter.update({"stats.visits": 3, "totalCount": Increment(1)})`.
 
         :param fields: Names of the model fields to write, or a dict of changes.
         :param transaction: Optional transaction to use.
+        :param batch: Optional write batch to add the write to.
         :raise ModelNotFoundError: If the model has not been saved.
         :raise ValueError: If a field is not a field of the model.
         :raise pydantic.ValidationError: If the changes are not valid for the model.
         :raise google.api_core.exceptions.NotFound: If the document does not exist.
         """
+        writer = get_writer(transaction, batch)
         if self.__dict__.get(self.__document_id__) is None:
             raise ModelNotFoundError("Can not update unsaved model")
 
@@ -267,8 +299,8 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
             data = self._prepare_field_update(fields)  # type: ignore[arg-type]
 
         doc_ref = self._get_doc_ref()
-        if transaction is not None:
-            transaction.update(doc_ref, data)
+        if writer is not None:
+            writer.update(doc_ref, data)
             return
         await doc_ref.update(data)
 
@@ -362,6 +394,8 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         field: str,
         amount: Union[int, float] = 1,
         transaction: Optional[AsyncTransaction] = None,
+        *,
+        batch: Optional[AsyncWriteBatch] = None,
     ) -> None:
         """
         Atomically increments a numeric field of this model in the database.
@@ -370,38 +404,48 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         fields, e.g. "stock" or "stats.visits". If the stored value is missing or not a
         number, Firestore sets it to `amount`. The same change is applied to this model
         instance, but other writes to the field aren't, so use `reload()` to get the
-        stored value. In a transaction the instance is left unchanged, since the write
-        only happens when the transaction commits.
+        stored value. In a transaction or batch the instance is left unchanged, since
+        the write only happens when the transaction or batch commits.
 
         Example: `product.increment("stock", -1)`.
 
         :param field: Firestore field path to increment.
         :param amount: Amount to add. Use a negative value to decrement.
         :param transaction: Optional transaction to use.
+        :param batch: Optional write batch to add the write to.
         :raise ModelNotFoundError: If the model has not been saved.
         :raise google.api_core.exceptions.NotFound: If the document does not exist.
         """
+        writer = get_writer(transaction, batch)
         if self.__dict__.get(self.__document_id__) is None:
             raise ModelNotFoundError("Can not increment unsaved model")
 
         doc_ref = self._get_doc_ref()
         data = {field: Increment(amount)}
-        if transaction is not None:
-            transaction.update(doc_ref, data)
+        if writer is not None:
+            writer.update(doc_ref, data)
             return
         await doc_ref.update(data)
         increment_locally(self, field, amount)
 
-    async def delete(self, transaction: Optional[AsyncTransaction] = None) -> None:
+    async def delete(
+        self,
+        transaction: Optional[AsyncTransaction] = None,
+        *,
+        batch: Optional[AsyncWriteBatch] = None,
+    ) -> None:
         """
         Deletes this specific model instance from the database.
 
+        :param transaction: Optional transaction to use.
+        :param batch: Optional write batch to add the write to.
         :raise DocumentIDError: If the ID is not valid.
         """
+        writer = get_writer(transaction, batch)
         doc_ref = self._get_doc_ref()
-        if transaction is not None:
-            # Like save(): the transaction must come from the same client as the model
-            transaction.delete(doc_ref)
+        if writer is not None:
+            # Like save(): the transaction or batch must come from the same client
+            writer.delete(doc_ref)
             return
         await doc_ref.delete()
 

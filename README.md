@@ -683,6 +683,38 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+## Batched writes
+
+A
+[batched write](https://firebase.google.com/docs/firestore/manage-data/transactions#batched-writes)
+applies several writes at once: either all of them succeed or none do. Get a batch with
+`get_batch()` or `get_async_batch()`, pass it as `batch` to the write methods, and
+commit it:
+
+```python
+from firedantic import get_batch
+
+batch = get_batch()
+for product in new_products:
+    product.save(batch=batch)
+old_product.delete(batch=batch)
+batch.commit()
+```
+
+These methods take a `batch`:
+
+- `Model.create(batch=batch)`
+- `Model.delete(batch=batch)`
+- `Model.increment(field, amount, batch=batch)`
+- `Model.save(batch=batch)`
+- `Model.update(..., batch=batch)`
+
+As in a transaction, `save()` and `create()` set the model's ID right away, while
+`update()` and `increment()` leave the model instance unchanged, since nothing is
+written until the batch commits. Both helpers take the configuration name, for example
+`get_batch("backup")`, and the models must use the same configuration. Unlike a
+transaction, a batch can't read, and it isn't retried.
+
 ## Transactions
 
 Firedantic has basic support for

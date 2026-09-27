@@ -468,3 +468,18 @@ def test_collection_helpers_follow_model_rules():
     # No name is derived from the class name
     with pytest.raises(CollectionNotDefined):
         cfg.get_collection_name(Nameless)
+
+
+def test_batches_use_the_named_config(monkeypatch):
+    cfg = Configuration()
+    client = Mock()
+    async_client = Mock()
+    cfg.add(name="things", project="proj", client=client, async_client=async_client)
+
+    assert cfg.get_batch("things") is client.batch.return_value
+    assert cfg.get_async_batch("things") is async_client.batch.return_value
+
+    # The module-level helpers forward to the shared configuration
+    monkeypatch.setattr(cfg_module, "configuration", cfg)
+    assert cfg_module.get_batch("things") is client.batch.return_value
+    assert cfg_module.get_async_batch("things") is async_client.batch.return_value

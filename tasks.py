@@ -126,6 +126,9 @@ def unasync(ctx):
     import unasync
 
     unasync.main()
+    # Renaming can change the import order, so sort the generated imports here
+    # instead of leaving it to the ruff pre-commit hook, which unasync would undo
+    ctx.run("poetry run ruff check --select I --fix --quiet firedantic/_sync")
     ctx.run("poetry run ruff format .")
 
 

@@ -37,7 +37,9 @@ from firedantic.configurations import (
     ConfigItem,
     Configuration,
     configure,
+    get_async_batch,
     get_async_transaction,
+    get_batch,
     get_transaction,
 )
 from firedantic.exceptions import *

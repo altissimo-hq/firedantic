@@ -8,6 +8,7 @@ SUBS = [
     ("get_async_client", "get_client"),
     ("async_client", "client"),
     ("get_async_transaction", "get_transaction"),
+    ("get_async_batch", "get_batch"),
     (
         "from google.cloud.firestore_v1.async_transaction",
         "from google.cloud.firestore_v1.transaction",

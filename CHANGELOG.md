@@ -7,8 +7,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-27
+
 ### Added
 
+- Added batched writes: `save()`, `create()`, `update()`, `increment()` and `delete()`
+  take a `batch`, from the new `get_batch()` and `get_async_batch()` helpers, to add the
+  write to a Firestore write batch that is committed all at once.
 - Added a `start_after` cursor to `find()` for paging through results, like the one in
   `find_in_group()`. It takes a model from the previous page, its document ID or path,
   or a document snapshot.
@@ -426,7 +431,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.17.0...HEAD
+[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.18.0...HEAD
+[0.18.0]: https://github.com/altissimo-hq/firedantic/compare/0.17.0...0.18.0
 [0.17.0]: https://github.com/altissimo-hq/firedantic/compare/0.16.0...0.17.0
 [0.16.0]: https://github.com/altissimo-hq/firedantic/compare/0.15.0...0.16.0
 [0.15.0]: https://github.com/altissimo-hq/firedantic/compare/0.14.0...0.15.0
