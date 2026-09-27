@@ -9,6 +9,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Added `count()` to models, which counts matching documents with a count aggregation
+  query. Based on upstream ioxiocom/firedantic#95.
+- Added `get_by_doc_ids()` to models and `get_by_ids()` to `Model` and `SubModel`, which
+  fetch several documents in one request, in the order of the given IDs. Based on
+  upstream ioxiocom/firedantic#95.
+- Added `increment()` to models, which atomically increments a numeric field and applies
+  the same change to the model instance. It accepts nested field paths and aliases.
+  Based on upstream ioxiocom/firedantic#95.
 - Added a `py.typed` marker so type checkers use firedantic's type hints (PEP 561).
 
 ### Fixed
@@ -17,6 +25,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `find_one_in_group()` is now typed `Dict[str, Any]`, so filters on `int`, `float`,
   `bool`, `None` or `datetime` values no longer fail type checking. Based on upstream
   ioxiocom/firedantic#88.
+- `SubModel.get_by_id()` is typed to return the sub-model class instead of `BareModel`.
 
 ## [0.15.0] - 2026-09-27
 

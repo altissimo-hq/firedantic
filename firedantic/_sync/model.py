@@ -10,6 +10,7 @@ from google.cloud.firestore_v1 import (
     DocumentReference,
     DocumentSnapshot,
     FieldFilter,
+    Increment,
 )
 from google.cloud.firestore_v1.base_query import BaseQuery
 from google.cloud.firestore_v1.transaction import Transaction
@@ -17,7 +18,7 @@ from pydantic import PrivateAttr
 
 import firedantic.operators as op
 from firedantic import truncate_collection
-from firedantic.common import IndexDefinition, OrderDirection
+from firedantic.common import IndexDefinition, OrderDirection, increment_locally
 from firedantic.configurations import configuration
 from firedantic.exceptions import (
     CollectionNotDefined,
@@ -182,6 +183,41 @@ class BareModel(pydantic.BaseModel, ABC):
 
         setattr(self, self.__document_id__, doc_ref.id)
 
+    def increment(
+        self,
+        field: str,
+        amount: Union[int, float] = 1,
+        transaction: Optional[Transaction] = None,
+    ) -> None:
+        """
+        Atomically increments a numeric field of this model in the database.
+
+        `field` is a Firestore field path, so it uses field aliases and dots for nested
+        fields, e.g. "stock" or "stats.visits". If the stored value is missing or not a
+        number, Firestore sets it to `amount`. The same change is applied to this model
+        instance, but other writes to the field aren't, so use `reload()` to get the
+        stored value. In a transaction the instance is left unchanged, since the write
+        only happens when the transaction commits.
+
+        Example: `product.increment("stock", -1)`.
+
+        :param field: Firestore field path to increment.
+        :param amount: Amount to add. Use a negative value to decrement.
+        :param transaction: Optional transaction to use.
+        :raise ModelNotFoundError: If the model has not been saved.
+        :raise google.api_core.exceptions.NotFound: If the document does not exist.
+        """
+        if self.__dict__.get(self.__document_id__) is None:
+            raise ModelNotFoundError("Can not increment unsaved model")
+
+        doc_ref = self._get_doc_ref()
+        data = {field: Increment(amount)}
+        if transaction is not None:
+            transaction.update(doc_ref, data)
+            return
+        doc_ref.update(data)
+        increment_locally(self, field, amount)
+
     def delete(self, transaction: Optional[Transaction] = None) -> None:
         """
         Deletes this specific model instance from the database.
@@ -305,6 +341,31 @@ class BareModel(pydantic.BaseModel, ABC):
             )
             if doc_dict is not None
         ]
+
+    @classmethod
+    def count(
+        cls,
+        filter_: Optional[Dict[str, Any]] = None,
+        transaction: Optional[Transaction] = None,
+    ) -> int:
+        """
+        Returns the number of models matching a filter, using a count aggregation
+        query, so the documents themselves are not read.
+
+        Example: `Product.count({"stock": {">=": 1}})`.
+
+        :param filter_: The filter criteria.
+        :param transaction: Optional transaction to use.
+        :return: Number of matching models.
+        """
+        query: Union[BaseQuery, CollectionReference] = cls._get_col_ref()
+        if filter_:
+            for key, value in filter_.items():
+                query = cls._add_filter(query, key, value)
+
+        results = query.count().get(transaction=transaction)  # type: ignore
+        # Sync stubs type the result as a flat list, but both return one list per query
+        return int(results[0][0].value)  # type: ignore[index]
 
     @classmethod
     def _model_from_data(cls: Type[TBareModel], doc_id: str, data: Dict[str, Any]) -> TBareModel:
@@ -617,6 +678,44 @@ class BareModel(pydantic.BaseModel, ABC):
         return cls._get_by_doc_ref(doc_ref, transaction)  # type: ignore
 
     @classmethod
+    def get_by_doc_ids(
+        cls: Type[TBareModel],
+        doc_ids: Iterable[str],
+        transaction: Optional[Transaction] = None,
+    ) -> List[TBareModel]:
+        """
+        Returns the models with the given document IDs, fetched in one request.
+
+        The models are returned in the order of `doc_ids`. Documents that don't exist
+        are left out, and each document is returned only once.
+
+        :param doc_ids: The document IDs of the entries.
+        :param transaction: Optional transaction to use.
+        :return: List of found models.
+        :raise ModelNotFoundError: If a document ID is not valid, like `get_by_doc_id()`.
+        """
+        unique_ids = list(dict.fromkeys(doc_ids))
+        for doc_id in unique_ids:
+            try:
+                cls._validate_document_id(doc_id)
+            except InvalidDocumentID as e:
+                raise ModelNotFoundError(
+                    f"No '{cls.__name__}' found with {cls.__document_id__} '{doc_id}'"
+                ) from e
+        if not unique_ids:
+            return []
+
+        col_ref = cls._get_col_ref()
+        client = configuration.get_client(cls.__db_config__)
+        doc_refs = [col_ref.document(doc_id) for doc_id in unique_ids]
+        found = {}
+        for doc in client.get_all(doc_refs, transaction=transaction):
+            data = doc.to_dict()
+            if data is not None:
+                found[doc.id] = cls._model_from_data(doc.id, data)
+        return [found[doc_id] for doc_id in unique_ids if doc_id in found]
+
+    @classmethod
     def _get_by_doc_ref(
         cls: Type[TBareModel],
         doc_ref: DocumentReference,
@@ -717,6 +816,21 @@ class Model(BareModel):
         :raises ModelNotFoundError: If no model was found by given id.
         """
         return cls.get_by_doc_id(id_, transaction=transaction)
+
+    @classmethod
+    def get_by_ids(
+        cls: Type[TBareModel],
+        ids: Iterable[str],
+        transaction: Optional[Transaction] = None,
+    ) -> List[TBareModel]:
+        """
+        Get models by document IDs in one request, like `get_by_doc_ids()`.
+
+        :param ids: Document IDs.
+        :param transaction: Optional transaction to use.
+        :raises ModelNotFoundError: If an ID is not valid.
+        """
+        return cls.get_by_doc_ids(ids, transaction=transaction)
 
 
 class BareSubCollection(ABC):
@@ -826,10 +940,10 @@ class SubModel(BareSubModel):
 
     @classmethod
     def get_by_id(
-        cls: Type[TBareModel],
+        cls: Type[TBareSubModel],
         id_: str,
         transaction: Optional[Transaction] = None,
-    ) -> TBareModel:
+    ) -> TBareSubModel:
         """
         Get single item by document ID
 
@@ -838,6 +952,21 @@ class SubModel(BareSubModel):
         :raises ModelNotFoundError:
         """
         return cls.get_by_doc_id(id_, transaction=transaction)
+
+    @classmethod
+    def get_by_ids(
+        cls: Type[TBareSubModel],
+        ids: Iterable[str],
+        transaction: Optional[Transaction] = None,
+    ) -> List[TBareSubModel]:
+        """
+        Get items by document IDs in one request, like `get_by_doc_ids()`.
+
+        :param ids: Document IDs.
+        :param transaction: Optional transaction to use.
+        :raises ModelNotFoundError: If an ID is not valid.
+        """
+        return cls.get_by_doc_ids(ids, transaction=transaction)
 
 
 class SubCollection(BareSubCollection, ABC):

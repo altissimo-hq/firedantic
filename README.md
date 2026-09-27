@@ -151,10 +151,39 @@ Product.find({"stock": {">=": 3}})
 Product.find({"stock": {op.GTE: 3}})
 Product.find({"stock": {">=": 1}}, order_by=[('unit_value', Query.ASCENDING)], limit=25, offset=50)
 Product.find(order_by=[('unit_value', Query.ASCENDING), ('stock', Query.DESCENDING)], limit=2)
+
+# Count matching documents without reading them
+Product.count()
+Product.count({"stock": {op.GTE: 3}})
+
+# Fetch several documents by ID in one request; missing ones are left out
+Product.get_by_ids(["id-1", "id-2"])
 ```
 
 The query operators are found at
 [https://firebase.google.com/docs/firestore/query-data/queries#query_operators](https://firebase.google.com/docs/firestore/query-data/queries#query_operators).
+Models extending `BareModel` with a custom document ID field use `get_by_doc_ids()`
+instead of `get_by_ids()`.
+
+#### Atomic increments
+
+`increment()` atomically adds to a numeric field without reading and saving the whole
+model. The field is a Firestore field path, so it uses field aliases and dots for nested
+fields. If the stored value is missing or not a number, Firestore sets it to the amount.
+
+```python
+product = Product(product_id="abc-123", stock=10, unit_value=5)
+product.save()
+
+product.increment("stock", 5)
+assert product.stock == 15
+product.increment("stock", -3)
+assert product.stock == 12
+```
+
+The model instance gets the same change, but not other writes to the field, so use
+`reload()` to see the stored value. In a transaction the instance is left unchanged,
+since the write only happens when the transaction commits.
 
 ### Async Usage
 
@@ -573,14 +602,19 @@ Firedantic has basic support for
 The following methods can be used in a transaction for both **sync** and **async**
 models:
 
+- `Model.count(transaction=transaction)`
 - `Model.delete(transaction=transaction)`
 - `Model.find_one(transaction=transaction)`
 - `Model.find(transaction=transaction)`
 - `Model.get_by_doc_id(transaction=transaction)`
+- `Model.get_by_doc_ids(transaction=transaction)`
 - `Model.get_by_id(transaction=transaction)`
+- `Model.get_by_ids(transaction=transaction)`
+- `Model.increment(field, amount, transaction=transaction)`
 - `Model.reload(transaction=transaction)`
 - `Model.save(transaction=transaction)`
 - `SubModel.get_by_id(transaction=transaction)`
+- `SubModel.get_by_ids(transaction=transaction)`
 
 When using transactions, note that read operations must come before write operations.
 

@@ -1,11 +1,11 @@
 from operator import attrgetter
-from typing import Optional
+from typing import Dict, Optional
 from uuid import uuid4
 
 import pytest
 from google.cloud.firestore import Query, transactional
 from google.cloud.firestore_v1.transaction import Transaction
-from pydantic import ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 import firedantic.operators as op
 from firedantic import Model, SubCollection, SubModel, get_transaction
@@ -112,6 +112,129 @@ def test_find(create_company, create_product) -> None:
     with pytest.raises(ValueError):
         Product.find({"product_id": {"<>": "a"}})
 
+
+
+
+def test_count(create_product) -> None:
+    assert Product.count() == 0
+
+    for p in TEST_PRODUCTS:
+        create_product(**p)
+
+    assert Product.count() == 4
+    assert Product.count({"stock": {op.GTE: 1}}) == 3
+    assert Product.count({"stock": {op.GTE: 2, op.LT: 4}}) == 2
+    assert Product.count({"product_id": "missing"}) == 0
+
+
+
+def test_get_by_ids(create_company) -> None:
+    company_a = create_company(company_id="1234555-1")
+    company_b = create_company(company_id="1231231-2")
+
+    found = Company.get_by_ids([company_b.id, "missing", company_a.id, company_b.id])
+    assert found == [company_b, company_a]
+
+    assert Company.get_by_ids([]) == []
+    with pytest.raises(ModelNotFoundError):
+        Company.get_by_ids([company_a.id, "a/b"])
+
+
+
+def test_submodel_get_by_ids() -> None:
+    u = User(name="Foo")
+    u.save()
+    us = UserStats.model_for(u)
+    us(id="2021", purchases=1).save()
+    us(id="2022", purchases=2).save()
+
+    found = us.get_by_ids(["2022", "2020", "2021"])
+    assert [(s.id, s.purchases) for s in found] == [("2022", 2), ("2021", 1)]
+
+
+
+def test_count_and_get_by_ids_in_transaction(create_company) -> None:
+    company = create_company()
+
+    @transactional
+    def read_in_transaction(transaction: Transaction):
+        return (
+            Company.count(transaction=transaction),
+            Company.get_by_ids([company.id], transaction=transaction),
+        )
+
+    assert read_in_transaction(get_transaction()) == (1, [company])
+
+
+class CounterStats(BaseModel):
+    visits: int = 0
+
+
+class Counter(Model):
+    __collection__ = "counters"
+    model_config = ConfigDict(populate_by_name=True)
+
+    total: int = Field(default=0, alias="totalCount")
+    stats: CounterStats = CounterStats()
+    by_day: Dict[str, int] = {}
+    optional: Optional[int] = None
+
+
+
+def test_increment(create_product) -> None:
+    product = create_product(stock=3)
+    assert product.id
+
+    product.increment("stock", 5)
+    assert product.stock == 8
+    assert (Product.get_by_id(product.id)).stock == 8
+
+    product.increment("stock", -3)
+    product.reload()
+    assert product.stock == 5
+
+
+
+def test_increment_paths() -> None:
+    counter = Counter(by_day={"mon": 1})
+    counter.save(exclude_none=True)
+    assert counter.id
+
+    # Aliased, nested, dict and missing fields are updated the way Firestore does
+    counter.increment("totalCount")
+    counter.increment("stats.visits", 2)
+    counter.increment("by_day.mon", 3)
+    counter.increment("by_day.tue", 5)
+    counter.increment("optional", 4)
+
+    assert counter.total == 1
+    assert counter.stats.visits == 2
+    assert counter.by_day == {"mon": 4, "tue": 5}
+    assert counter.optional == 4
+    assert counter == Counter.get_by_id(counter.id)
+
+
+
+def test_increment_unsaved() -> None:
+    with pytest.raises(ModelNotFoundError):
+        Counter().increment("totalCount")
+
+
+
+def test_increment_in_transaction() -> None:
+    counter = Counter()
+    counter.save()
+
+    @transactional
+    def increment_in_transaction(transaction: Transaction) -> None:
+        counter.increment("totalCount", 2, transaction=transaction)
+
+    increment_in_transaction(get_transaction())
+
+    # The write happens on commit, so the instance is not changed
+    assert counter.total == 0
+    counter.reload()
+    assert counter.total == 2
 
 
 def test_find_not_in(create_company) -> None:
@@ -369,6 +492,16 @@ def test_custom_id_model() -> None:
     assert m.foo is not None
     assert m.bar == "bar"
 
+
+
+
+def test_custom_id_model_get_by_doc_ids() -> None:
+    c = CustomIDModel(bar="bar")  # type: ignore
+    c.save()
+    assert c.foo
+
+    models = CustomIDModel.get_by_doc_ids([c.foo, "missing"])
+    assert [(m.foo, m.bar) for m in models] == [(c.foo, "bar")]
 
 
 def test_custom_id_conflict() -> None:

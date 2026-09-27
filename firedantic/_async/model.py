@@ -10,6 +10,7 @@ from google.cloud.firestore_v1 import (
     AsyncDocumentReference,
     DocumentSnapshot,
     FieldFilter,
+    Increment,
 )
 from google.cloud.firestore_v1.async_query import AsyncQuery
 from google.cloud.firestore_v1.async_transaction import AsyncTransaction
@@ -17,7 +18,7 @@ from pydantic import PrivateAttr
 
 import firedantic.operators as op
 from firedantic import async_truncate_collection
-from firedantic.common import IndexDefinition, OrderDirection
+from firedantic.common import IndexDefinition, OrderDirection, increment_locally
 from firedantic.configurations import configuration
 from firedantic.exceptions import (
     CollectionNotDefined,
@@ -182,6 +183,41 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
 
         setattr(self, self.__document_id__, doc_ref.id)
 
+    async def increment(
+        self,
+        field: str,
+        amount: Union[int, float] = 1,
+        transaction: Optional[AsyncTransaction] = None,
+    ) -> None:
+        """
+        Atomically increments a numeric field of this model in the database.
+
+        `field` is a Firestore field path, so it uses field aliases and dots for nested
+        fields, e.g. "stock" or "stats.visits". If the stored value is missing or not a
+        number, Firestore sets it to `amount`. The same change is applied to this model
+        instance, but other writes to the field aren't, so use `reload()` to get the
+        stored value. In a transaction the instance is left unchanged, since the write
+        only happens when the transaction commits.
+
+        Example: `product.increment("stock", -1)`.
+
+        :param field: Firestore field path to increment.
+        :param amount: Amount to add. Use a negative value to decrement.
+        :param transaction: Optional transaction to use.
+        :raise ModelNotFoundError: If the model has not been saved.
+        :raise google.api_core.exceptions.NotFound: If the document does not exist.
+        """
+        if self.__dict__.get(self.__document_id__) is None:
+            raise ModelNotFoundError("Can not increment unsaved model")
+
+        doc_ref = self._get_doc_ref()
+        data = {field: Increment(amount)}
+        if transaction is not None:
+            transaction.update(doc_ref, data)
+            return
+        await doc_ref.update(data)
+        increment_locally(self, field, amount)
+
     async def delete(self, transaction: Optional[AsyncTransaction] = None) -> None:
         """
         Deletes this specific model instance from the database.
@@ -305,6 +341,31 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
             )
             if doc_dict is not None
         ]
+
+    @classmethod
+    async def count(
+        cls,
+        filter_: Optional[Dict[str, Any]] = None,
+        transaction: Optional[AsyncTransaction] = None,
+    ) -> int:
+        """
+        Returns the number of models matching a filter, using a count aggregation
+        query, so the documents themselves are not read.
+
+        Example: `Product.count({"stock": {">=": 1}})`.
+
+        :param filter_: The filter criteria.
+        :param transaction: Optional transaction to use.
+        :return: Number of matching models.
+        """
+        query: Union[AsyncQuery, AsyncCollectionReference] = cls._get_col_ref()
+        if filter_:
+            for key, value in filter_.items():
+                query = cls._add_filter(query, key, value)
+
+        results = await query.count().get(transaction=transaction)  # type: ignore
+        # Sync stubs type the result as a flat list, but both return one list per query
+        return int(results[0][0].value)  # type: ignore[index]
 
     @classmethod
     def _model_from_data(
@@ -621,6 +682,44 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         return await cls._get_by_doc_ref(doc_ref, transaction)  # type: ignore
 
     @classmethod
+    async def get_by_doc_ids(
+        cls: Type[TAsyncBareModel],
+        doc_ids: Iterable[str],
+        transaction: Optional[AsyncTransaction] = None,
+    ) -> List[TAsyncBareModel]:
+        """
+        Returns the models with the given document IDs, fetched in one request.
+
+        The models are returned in the order of `doc_ids`. Documents that don't exist
+        are left out, and each document is returned only once.
+
+        :param doc_ids: The document IDs of the entries.
+        :param transaction: Optional transaction to use.
+        :return: List of found models.
+        :raise ModelNotFoundError: If a document ID is not valid, like `get_by_doc_id()`.
+        """
+        unique_ids = list(dict.fromkeys(doc_ids))
+        for doc_id in unique_ids:
+            try:
+                cls._validate_document_id(doc_id)
+            except InvalidDocumentID as e:
+                raise ModelNotFoundError(
+                    f"No '{cls.__name__}' found with {cls.__document_id__} '{doc_id}'"
+                ) from e
+        if not unique_ids:
+            return []
+
+        col_ref = cls._get_col_ref()
+        client = configuration.get_async_client(cls.__db_config__)
+        doc_refs = [col_ref.document(doc_id) for doc_id in unique_ids]
+        found = {}
+        async for doc in client.get_all(doc_refs, transaction=transaction):
+            data = doc.to_dict()
+            if data is not None:
+                found[doc.id] = cls._model_from_data(doc.id, data)
+        return [found[doc_id] for doc_id in unique_ids if doc_id in found]
+
+    @classmethod
     async def _get_by_doc_ref(
         cls: Type[TAsyncBareModel],
         doc_ref: AsyncDocumentReference,
@@ -721,6 +820,21 @@ class AsyncModel(AsyncBareModel):
         :raises ModelNotFoundError: If no model was found by given id.
         """
         return await cls.get_by_doc_id(id_, transaction=transaction)
+
+    @classmethod
+    async def get_by_ids(
+        cls: Type[TAsyncBareModel],
+        ids: Iterable[str],
+        transaction: Optional[AsyncTransaction] = None,
+    ) -> List[TAsyncBareModel]:
+        """
+        Get models by document IDs in one request, like `get_by_doc_ids()`.
+
+        :param ids: Document IDs.
+        :param transaction: Optional transaction to use.
+        :raises ModelNotFoundError: If an ID is not valid.
+        """
+        return await cls.get_by_doc_ids(ids, transaction=transaction)
 
 
 class AsyncBareSubCollection(ABC):
@@ -830,10 +944,10 @@ class AsyncSubModel(AsyncBareSubModel):
 
     @classmethod
     async def get_by_id(
-        cls: Type[TAsyncBareModel],
+        cls: Type[TAsyncBareSubModel],
         id_: str,
         transaction: Optional[AsyncTransaction] = None,
-    ) -> TAsyncBareModel:
+    ) -> TAsyncBareSubModel:
         """
         Get single item by document ID
 
@@ -842,6 +956,21 @@ class AsyncSubModel(AsyncBareSubModel):
         :raises ModelNotFoundError:
         """
         return await cls.get_by_doc_id(id_, transaction=transaction)
+
+    @classmethod
+    async def get_by_ids(
+        cls: Type[TAsyncBareSubModel],
+        ids: Iterable[str],
+        transaction: Optional[AsyncTransaction] = None,
+    ) -> List[TAsyncBareSubModel]:
+        """
+        Get items by document IDs in one request, like `get_by_doc_ids()`.
+
+        :param ids: Document IDs.
+        :param transaction: Optional transaction to use.
+        :raises ModelNotFoundError: If an ID is not valid.
+        """
+        return await cls.get_by_doc_ids(ids, transaction=transaction)
 
 
 class AsyncSubCollection(AsyncBareSubCollection, ABC):

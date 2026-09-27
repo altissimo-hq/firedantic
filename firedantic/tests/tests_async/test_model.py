@@ -1,11 +1,11 @@
 from operator import attrgetter
-from typing import Optional
+from typing import Dict, Optional
 from uuid import uuid4
 
 import pytest
 from google.cloud.firestore import Query, async_transactional
 from google.cloud.firestore_v1.async_transaction import AsyncTransaction
-from pydantic import ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 import firedantic.operators as op
 from firedantic import AsyncModel, AsyncSubCollection, AsyncSubModel, get_async_transaction
@@ -112,6 +112,129 @@ async def test_find(create_company, create_product) -> None:
     with pytest.raises(ValueError):
         await Product.find({"product_id": {"<>": "a"}})
 
+
+
+@pytest.mark.asyncio
+async def test_count(create_product) -> None:
+    assert await Product.count() == 0
+
+    for p in TEST_PRODUCTS:
+        await create_product(**p)
+
+    assert await Product.count() == 4
+    assert await Product.count({"stock": {op.GTE: 1}}) == 3
+    assert await Product.count({"stock": {op.GTE: 2, op.LT: 4}}) == 2
+    assert await Product.count({"product_id": "missing"}) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_by_ids(create_company) -> None:
+    company_a = await create_company(company_id="1234555-1")
+    company_b = await create_company(company_id="1231231-2")
+
+    found = await Company.get_by_ids([company_b.id, "missing", company_a.id, company_b.id])
+    assert found == [company_b, company_a]
+
+    assert await Company.get_by_ids([]) == []
+    with pytest.raises(ModelNotFoundError):
+        await Company.get_by_ids([company_a.id, "a/b"])
+
+
+@pytest.mark.asyncio
+async def test_submodel_get_by_ids() -> None:
+    u = User(name="Foo")
+    await u.save()
+    us = UserStats.model_for(u)
+    await us(id="2021", purchases=1).save()
+    await us(id="2022", purchases=2).save()
+
+    found = await us.get_by_ids(["2022", "2020", "2021"])
+    assert [(s.id, s.purchases) for s in found] == [("2022", 2), ("2021", 1)]
+
+
+@pytest.mark.asyncio
+async def test_count_and_get_by_ids_in_transaction(create_company) -> None:
+    company = await create_company()
+
+    @async_transactional
+    async def read_in_transaction(transaction: AsyncTransaction):
+        return (
+            await Company.count(transaction=transaction),
+            await Company.get_by_ids([company.id], transaction=transaction),
+        )
+
+    assert await read_in_transaction(get_async_transaction()) == (1, [company])
+
+
+class CounterStats(BaseModel):
+    visits: int = 0
+
+
+class Counter(AsyncModel):
+    __collection__ = "counters"
+    model_config = ConfigDict(populate_by_name=True)
+
+    total: int = Field(default=0, alias="totalCount")
+    stats: CounterStats = CounterStats()
+    by_day: Dict[str, int] = {}
+    optional: Optional[int] = None
+
+
+@pytest.mark.asyncio
+async def test_increment(create_product) -> None:
+    product = await create_product(stock=3)
+    assert product.id
+
+    await product.increment("stock", 5)
+    assert product.stock == 8
+    assert (await Product.get_by_id(product.id)).stock == 8
+
+    await product.increment("stock", -3)
+    await product.reload()
+    assert product.stock == 5
+
+
+@pytest.mark.asyncio
+async def test_increment_paths() -> None:
+    counter = Counter(by_day={"mon": 1})
+    await counter.save(exclude_none=True)
+    assert counter.id
+
+    # Aliased, nested, dict and missing fields are updated the way Firestore does
+    await counter.increment("totalCount")
+    await counter.increment("stats.visits", 2)
+    await counter.increment("by_day.mon", 3)
+    await counter.increment("by_day.tue", 5)
+    await counter.increment("optional", 4)
+
+    assert counter.total == 1
+    assert counter.stats.visits == 2
+    assert counter.by_day == {"mon": 4, "tue": 5}
+    assert counter.optional == 4
+    assert counter == await Counter.get_by_id(counter.id)
+
+
+@pytest.mark.asyncio
+async def test_increment_unsaved() -> None:
+    with pytest.raises(ModelNotFoundError):
+        await Counter().increment("totalCount")
+
+
+@pytest.mark.asyncio
+async def test_increment_in_transaction() -> None:
+    counter = Counter()
+    await counter.save()
+
+    @async_transactional
+    async def increment_in_transaction(transaction: AsyncTransaction) -> None:
+        await counter.increment("totalCount", 2, transaction=transaction)
+
+    await increment_in_transaction(get_async_transaction())
+
+    # The write happens on commit, so the instance is not changed
+    assert counter.total == 0
+    await counter.reload()
+    assert counter.total == 2
 
 @pytest.mark.asyncio
 async def test_find_not_in(create_company) -> None:
@@ -369,6 +492,16 @@ async def test_custom_id_model() -> None:
     assert m.foo is not None
     assert m.bar == "bar"
 
+
+
+@pytest.mark.asyncio
+async def test_custom_id_model_get_by_doc_ids() -> None:
+    c = CustomIDModel(bar="bar")  # type: ignore
+    await c.save()
+    assert c.foo
+
+    models = await CustomIDModel.get_by_doc_ids([c.foo, "missing"])
+    assert [(m.foo, m.bar) for m in models] == [(c.foo, "bar")]
 
 @pytest.mark.asyncio
 async def test_custom_id_conflict() -> None:
