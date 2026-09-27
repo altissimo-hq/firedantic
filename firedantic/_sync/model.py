@@ -1,5 +1,7 @@
+import re
 from abc import ABC
 from logging import getLogger
+from string import Formatter
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Type, TypeVar, Union
 
 import pydantic
@@ -11,6 +13,7 @@ from google.cloud.firestore_v1 import (
 )
 from google.cloud.firestore_v1.base_query import BaseQuery
 from google.cloud.firestore_v1.transaction import Transaction
+from pydantic import PrivateAttr
 
 import firedantic.operators as op
 from firedantic import truncate_collection
@@ -39,6 +42,9 @@ FIND_TYPES = {
     op.IN,
     op.NOT_IN,
 }
+# FieldPath.document_id(), for filtering and ordering by document path
+DOCUMENT_ID = "__name__"
+INEQUALITY_TYPES = {op.LT, op.LTE, op.NE, op.GT, op.GTE, op.NOT_IN}
 
 
 def get_collection_name(cls, collection_name: Optional[str] = None) -> str:
@@ -103,6 +109,12 @@ class BareModel(pydantic.BaseModel, ABC):
     __ttl_field__: Optional[str] = None
     __composite_indexes__: Optional[Iterable[IndexDefinition]] = None
     __db_config__: str = "(default)"  # override in subclasses when needed
+    __collection_group__: Optional[str] = None
+    __discriminator__: Optional[str] = None
+
+    # Set on models loaded by a collection group query, so they can be saved,
+    # reloaded and deleted without knowing their parent document.
+    _firedantic_doc_ref: Optional[DocumentReference] = PrivateAttr(default=None)
 
     def save(
         self,
@@ -140,9 +152,12 @@ class BareModel(pydantic.BaseModel, ABC):
         if client is None:
             raise RuntimeError(f"No client configured for config '{resolved}'")
 
-        # Get collection reference from client with the collection_name
-        collection_name = self.get_collection_name()
-        col_ref = client.collection(collection_name)
+        # Models from collection group queries know their own collection; otherwise
+        # get collection reference from client with the collection_name
+        if self._firedantic_doc_ref is not None and config_name is None:
+            col_ref = self._firedantic_doc_ref.parent
+        else:
+            col_ref = client.collection(self.get_collection_name())
 
         # Build doc ref (use provided id if set, otherwise let server generate)
         doc_id = self.get_document_id()
@@ -237,7 +252,10 @@ class BareModel(pydantic.BaseModel, ABC):
         if doc_id is None:
             raise ModelNotFoundError("Can not reload unsaved model")
 
-        updated_model = self.get_by_doc_id(doc_id, transaction=transaction)
+        if self._firedantic_doc_ref is not None:
+            updated_model = self._get_by_doc_ref(self._get_doc_ref(), transaction)
+        else:
+            updated_model = self.get_by_doc_id(doc_id, transaction=transaction)
         updated_model_doc_id = updated_model.__dict__[self.__document_id__]
         assert doc_id == updated_model_doc_id
 
@@ -253,6 +271,15 @@ class BareModel(pydantic.BaseModel, ABC):
         if doc_id is not None:
             self._validate_document_id(doc_id)
         return getattr(self, self.__document_id__, None)
+
+    def get_document_path(self) -> Optional[str]:
+        """
+        Returns the full document path of this model instance, e.g.
+        "animals/abc/surveys/xyz", or None if the model has no document ID yet.
+        """
+        if self.get_document_id() is None:
+            return None
+        return str(self._get_doc_ref().path)
 
     _OrderBy = List[Tuple[str, OrderDirection]]
 
@@ -311,28 +338,236 @@ class BareModel(pydantic.BaseModel, ABC):
         if offset is not None:
             query = query.offset(offset)  # type: ignore
 
-        def _cls(doc_id: str, data: Dict[str, Any]) -> TBareModel:
-            if cls.__document_id__ in data:
-                logger.warning(
-                    "%s document ID %s contains conflicting %s in data with value %s",
-                    cls.__name__,
-                    doc_id,
-                    cls.__document_id__,
-                    data[cls.__document_id__],
-                )
-            data[cls.__document_id__] = doc_id
-            model = cls(**data)
-            setattr(model, cls.__document_id__, doc_id)
-            return model
-
         return [
-            _cls(doc_id, doc_dict)
+            cls._model_from_data(doc_id, doc_dict)
             for doc_id, doc_dict in (
                 (doc.id, doc.to_dict())
                 for doc in query.stream(transaction=transaction)  # type: ignore
             )
             if doc_dict is not None
         ]
+
+    @classmethod
+    def _model_from_data(cls: Type[TBareModel], doc_id: str, data: Dict[str, Any]) -> TBareModel:
+        if cls.__document_id__ in data:
+            logger.warning(
+                "%s document ID %s contains conflicting %s in data with value %s",
+                cls.__name__,
+                doc_id,
+                cls.__document_id__,
+                data[cls.__document_id__],
+            )
+        data[cls.__document_id__] = doc_id
+        model = cls(**data)
+        setattr(model, cls.__document_id__, doc_id)
+        return model
+
+    @classmethod
+    def find_in_group(  # pylint: disable=too-many-arguments
+        cls: Type[TBareModel],
+        filter_: Optional[Dict[str, Union[str, dict]]] = None,
+        order_by: Optional[_OrderBy] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        start_after: Union["BareModel", str, DocumentSnapshot, None] = None,
+        transaction: Optional[Transaction] = None,
+    ) -> List[TBareModel]:
+        """
+        Returns a list of models from all collections in the model's collection group.
+
+        Works like `find()`, but runs a collection group query, so for a sub-model with
+        `__collection_tpl__ = "animals/{animal_id}/surveys"` it searches the surveys of
+        every animal. Only documents below the model's top-level collection (including
+        the configured prefix) are queried, and if `__discriminator__` is set, only
+        documents whose discriminator field equals the field's default. Any remaining
+        documents whose path does not match the collection template, such as
+        "animals/abc/visits/xyz/surveys/...", are skipped with a warning. That check
+        runs after `limit` is applied, so set a discriminator to get full pages.
+
+        The returned models remember their document path, so `save()`, `reload()` and
+        `delete()` work on them directly.
+
+        Example: `AnimalSurvey.find_in_group({"status": "open"}, limit=20)`.
+        Example: `AnimalSurvey.find_in_group(limit=20, start_after=previous_page[-1])`.
+
+        :param filter_: The filter criteria.
+        :param order_by: List of columns and direction to order results by.
+        :param limit: Maximum results to return.
+        :param offset: Skip the first n results.
+        :param start_after: Cursor to continue from: a model returned by a previous
+            call, its `get_document_path()`, or a document snapshot.
+        :param transaction: Optional transaction to use.
+        :return: List of found models.
+        """
+        client = configuration.get_client(cls.__db_config__)
+        query: BaseQuery = client.collection_group(cls.get_collection_group_id())
+
+        discriminator = cls._get_discriminator_filter()
+        if discriminator is not None:
+            query = cls._add_filter(query, *discriminator)  # type: ignore
+        if filter_:
+            for key, value in filter_.items():
+                query = cls._add_filter(query, key, value)  # type: ignore
+
+        if order_by is not None:
+            for field, direction in order_by:
+                query = query.order_by(field, direction=direction)  # type: ignore
+
+        path_range = cls._get_collection_group_path_range()
+        if path_range is not None:
+            # Only search below the model's top-level collection (with its prefix), so
+            # same-named subcollections elsewhere don't use up the limit
+            lower, upper = (client.document(*bound) for bound in path_range)
+            query = query.where(filter=FieldFilter(DOCUMENT_ID, ">=", lower))
+            query = query.where(filter=FieldFilter(DOCUMENT_ID, "<", upper))
+            # The Firestore client adds the implicit orderings for cursors itself, but
+            # adds __name__ once per filter on it, which the server rejects
+            ordered = {field for field, _ in order_by or []}
+            direction = order_by[-1][1] if order_by else "ASCENDING"
+            for field in sorted(cls._get_inequality_fields(filter_) - ordered):
+                query = query.order_by(field, direction=direction)  # type: ignore
+            query = query.order_by(DOCUMENT_ID, direction=direction)  # type: ignore
+
+        if start_after is not None:
+            query = query.start_after(cls._get_cursor_snapshot(start_after, transaction))
+        if limit is not None:
+            query = query.limit(limit)  # type: ignore
+        if offset is not None:
+            query = query.offset(offset)  # type: ignore
+
+        path_pattern = cls._get_collection_group_path_pattern()
+        models = []
+        for doc in query.stream(transaction=transaction):  # type: ignore
+            if not path_pattern.match(doc.reference.path):
+                logger.warning(
+                    "Skipping %s in collection group query for %s: path does not match %s",
+                    doc.reference.path,
+                    cls.__name__,
+                    path_pattern.pattern,
+                )
+                continue
+            data = doc.to_dict()
+            if data is None:
+                continue
+            model = cls._model_from_data(doc.id, data)
+            model._firedantic_doc_ref = doc.reference  # type: ignore
+            models.append(model)
+        return models
+
+    @classmethod
+    def find_one_in_group(
+        cls: Type[TBareModel],
+        filter_: Optional[Dict[str, Union[str, dict]]] = None,
+        order_by: Optional[_OrderBy] = None,
+        transaction: Optional[Transaction] = None,
+    ) -> TBareModel:
+        """
+        Returns one model from the model's collection group based on a filter.
+
+        :param filter_: The filter criteria.
+        :param order_by: List of columns and direction to order results by.
+        :return: The model instance.
+        :raise ModelNotFoundError: If the entry is not found.
+        """
+        models = cls.find_in_group(filter_, limit=1, order_by=order_by, transaction=transaction)
+        try:
+            return models[0]
+        except IndexError as e:
+            raise ModelNotFoundError(f"No '{cls.__name__}' found") from e
+
+    @classmethod
+    def _get_cursor_snapshot(
+        cls,
+        cursor: Union["BareModel", str, DocumentSnapshot],
+        transaction: Optional[Transaction] = None,
+    ) -> DocumentSnapshot:
+        if isinstance(cursor, DocumentSnapshot):
+            return cursor
+        if isinstance(cursor, BareModel):
+            doc_ref = cursor._get_doc_ref()
+        else:
+            client = configuration.get_client(cls.__db_config__)
+            doc_ref = client.document(cursor)
+        snapshot = doc_ref.get(transaction=transaction)
+        if not snapshot.exists:
+            raise ModelNotFoundError(f"Cursor document '{doc_ref.path}' does not exist")
+        return snapshot
+
+    @classmethod
+    def _get_collection_path_template(cls) -> str:
+        """
+        Returns the collection path, with any placeholders, that this model lives in.
+        """
+        if not cls.__collection__:
+            raise CollectionNotDefined(f"Missing collection name for {cls.__name__}")
+        return cls.__collection__
+
+    @classmethod
+    def get_collection_group_id(cls) -> str:
+        """
+        Returns the collection group ID used by collection group queries and indexes,
+        which is the last segment of the (prefixed) collection path.
+        """
+        if cls.__collection_group__:
+            return cls.__collection_group__
+        path = get_collection_name(cls, cls._get_collection_path_template())
+        return path.rsplit("/", 1)[-1]
+
+    @classmethod
+    def _get_collection_group_path_pattern(cls) -> "re.Pattern[str]":
+        """
+        Returns a regex matching the document paths this model can have, e.g.
+        "animals/{animal_id}/surveys" matches "animals/abc/surveys/xyz".
+        """
+        path = get_collection_name(cls, cls._get_collection_path_template())
+        pattern = ""
+        for literal, field_name, _, _ in Formatter().parse(path):
+            pattern += re.escape(literal)
+            if field_name is not None:
+                pattern += "[^/]+"
+        return re.compile(f"^{pattern}/[^/]+$")
+
+    @classmethod
+    def _get_collection_group_path_range(cls) -> Optional[Tuple[Tuple[str, str], Tuple[str, str]]]:
+        """
+        Returns (lower, upper) document path bounds covering every document below the
+        model's top-level collection, or None for a top-level model.
+        """
+        path = get_collection_name(cls, cls._get_collection_path_template())
+        if "/" not in path:
+            return None
+        root = path.split("/", 1)[0]
+        if "{" in root:
+            return None
+        # "\x00" sorts before any document ID, and "root\x00" is the first
+        # collection ID after "root"
+        return (root, "\x00"), (root + "\x00", "\x00")
+
+    @staticmethod
+    def _get_inequality_fields(filter_: Optional[Dict[str, Union[str, dict]]]) -> set:
+        return {
+            field
+            for field, value in (filter_ or {}).items()
+            if isinstance(value, dict) and INEQUALITY_TYPES.intersection(value)
+        }
+
+    @classmethod
+    def _get_discriminator_filter(cls) -> Optional[Tuple[str, Any]]:
+        """
+        Returns the (field, value) filter for the model's `__discriminator__` field.
+        """
+        if cls.__discriminator__ is None:
+            return None
+        field = cls.model_fields.get(cls.__discriminator__)
+        value = None
+        if field is not None and not field.is_required():
+            value = field.get_default(call_default_factory=True)
+        if field is None or value is None:
+            raise ValueError(
+                f"{cls.__name__}.__discriminator__ must name a field with a default value, "
+                f"got '{cls.__discriminator__}'"
+            )
+        return field.alias or cls.__discriminator__, value
 
     @classmethod
     def _add_filter(
@@ -400,21 +635,26 @@ class BareModel(pydantic.BaseModel, ABC):
                 f"No '{cls.__name__}' found with {cls.__document_id__} '{doc_id}'"
             ) from e
 
-        document: DocumentSnapshot = (
-            cls._get_col_ref()
-            .document(doc_id)
-            .get(  # type: ignore[assignment]
-                transaction=transaction
-            )
+        doc_ref = cls._get_col_ref().document(doc_id)
+        return cls._get_by_doc_ref(doc_ref, transaction)  # type: ignore
+
+    @classmethod
+    def _get_by_doc_ref(
+        cls: Type[TBareModel],
+        doc_ref: DocumentReference,
+        transaction: Optional[Transaction] = None,
+    ) -> TBareModel:
+        document: DocumentSnapshot = doc_ref.get(  # type: ignore[assignment]
+            transaction=transaction
         )
         data = document.to_dict()
         if data is None:
             raise ModelNotFoundError(
-                f"No '{cls.__name__}' found with {cls.__document_id__} '{doc_id}'"
+                f"No '{cls.__name__}' found with {cls.__document_id__} '{doc_ref.id}'"
             )
-        data[cls.__document_id__] = doc_id
+        data[cls.__document_id__] = doc_ref.id
         model = cls(**data)
-        setattr(model, cls.__document_id__, doc_id)
+        setattr(model, cls.__document_id__, doc_ref.id)
         return model
 
     @classmethod
@@ -450,6 +690,8 @@ class BareModel(pydantic.BaseModel, ABC):
 
         :raise DocumentIDError: If the ID is not valid.
         """
+        if self._firedantic_doc_ref is not None:
+            return self._firedantic_doc_ref.parent.document(self.get_document_id())  # type: ignore
         return self._get_col_ref().document(self.get_document_id())  # type: ignore
 
     @staticmethod
@@ -531,6 +773,15 @@ class BareSubModel(BareModel, ABC):
         pass
 
     @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        # model_for() copies this from the Collection class, but collection group
+        # queries use the unbound model class, so it needs to be available there too
+        collection_document_id = getattr(cls.Collection, "__document_id__", None)
+        if collection_document_id and "__document_id__" not in cls.__dict__:
+            cls.__document_id__ = collection_document_id
+
+    @classmethod
     def _create(cls: Type[TBareSubModel], **kwargs) -> TBareSubModel:
         return cls(  # type: ignore
             **kwargs,
@@ -547,6 +798,21 @@ class BareSubModel(BareModel, ABC):
                 f"You should use {cls.__name__}.model_for(parent)"
             )
         return _get_col_ref(cls, cls.__collection__)
+
+    @classmethod
+    def _get_collection_path_template(cls) -> str:
+        collection_cls = getattr(cls, "__collection_cls__", None) or cls.Collection
+        if not collection_cls.__collection_tpl__:
+            raise CollectionNotDefined(f"Missing __collection_tpl__ for {cls.__name__}")
+        return collection_cls.__collection_tpl__
+
+    def get_parent_id(self) -> Optional[str]:
+        """
+        Returns the ID of the document this model's subcollection lives under, e.g.
+        the animal ID for a model loaded from "animals/abc/surveys/xyz".
+        """
+        parent = self._get_doc_ref().parent.parent
+        return parent.id if parent is not None else None
 
     @classmethod
     def model_for(cls, parent):
