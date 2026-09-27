@@ -530,6 +530,31 @@ Rules:
 __ttl_field__ = "expire"
 ```
 
+### Exporting to firestore.indexes.json
+
+If the indexes are managed with the Firebase CLI instead, export the declarations to its
+`firestore.indexes.json` file. `__composite_indexes__` become `indexes` entries, and
+`__field_indexes__` and `__ttl_field__` become `fieldOverrides` entries that keep
+Firestore's automatic indexes for the field.
+
+```shell
+# Add the declared indexes to the file, keeping the entries that are already there
+firedantic export-indexes myapp.models --update firestore.indexes.json
+
+# In CI: fail if the file is missing a declared index
+firedantic export-indexes myapp.models --check firestore.indexes.json
+
+# Print a new file
+firedantic export-indexes myapp.models > firestore.indexes.json
+```
+
+The command imports the given modules and exports the models defined in them and their
+submodules. `python -m firedantic` works too. Collection names include the configured
+prefix, so configure firedantic in the listed modules, or list the module that does it
+first. A file is for one database, so pick one with `--database` if the models use
+several. The same is available from Python with `export_firestore_indexes(models)` and
+`merge_firestore_indexes(existing, models)` in `firedantic.index_export`.
+
 #### Recommended Usage (New Configuration API)
 
 All index and TTL setup functions now automatically resolve:

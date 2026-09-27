@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Added `firedantic export-indexes` (also `python -m firedantic export-indexes`), which
+  exports the indexes and TTL policies declared in models to `firestore.indexes.json`.
+  `--update` adds them to an existing file and `--check` fails if the file is missing
+  any, for CI. `export_firestore_indexes()` and `merge_firestore_indexes()` do the same
+  from Python.
 - Added `__field_indexes__` and `collection_group_field_index()` for declaring the
   single-field indexes with collection group scope that collection group queries need.
   `set_up_field_indexes()` creates them as field overrides that keep the field's current
