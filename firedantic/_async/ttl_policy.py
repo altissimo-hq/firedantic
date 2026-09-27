@@ -8,6 +8,7 @@ from google.cloud.firestore_admin_v1.services.firestore_admin import (
 )
 
 from firedantic._async.model import AsyncBareModel
+from firedantic.configurations import configuration
 
 logger = getLogger("firedantic")
 
@@ -15,7 +16,7 @@ logger = getLogger("firedantic")
 async def set_up_ttl_policies(
     gcloud_project: str,
     models: Iterable[Type[AsyncBareModel]],
-    database: str = "(default)",
+    database: Optional[str] = None,
     client: Optional[FirestoreAdminAsyncClient] = None,
 ) -> List[AsyncOperation]:
     """
@@ -23,7 +24,8 @@ async def set_up_ttl_policies(
 
     :param gcloud_project: The technical name of the project in Google Cloud.
     :param models: Models for which to set up the TTL policy.
-    :param database: The Firestore database instance (it now supports multiple).
+    :param database: The Firestore database. Defaults to the database of each model's
+        configuration.
     :param client: The Firestore admin client.
     :return: List of operations that were launched to enable the policies.
     """
@@ -40,9 +42,10 @@ async def set_up_ttl_policies(
         collection_group = model.get_collection_group_id()
 
         # Get current details of the field
+        config_name = getattr(model, "__db_config__", "(default)")
         path = client.field_path(
             project=gcloud_project,
-            database=database,
+            database=database or configuration.get_config(config_name).database,
             collection=collection_group,
             field=model.__ttl_field__,
         )
@@ -61,7 +64,10 @@ async def set_up_ttl_policies(
         if field_obj.ttl_config.state == Field.TtlConfig.State.STATE_UNSPECIFIED:
             logger.info("Setting up new TTL config: " + log_str, *log_params)
             field_obj.ttl_config = Field.TtlConfig({"state": Field.TtlConfig.State.CREATING})
-            operation = await client.update_field({"field": field_obj})
+            # Only update the TTL config, so it can't undo other changes to the field
+            operation = await client.update_field(
+                {"field": field_obj, "update_mask": {"paths": ["ttl_config"]}}
+            )
             operations.append(operation)
         elif field_obj.ttl_config.state == Field.TtlConfig.State.CREATING:
             logger.info("TTL config is still being created: " + log_str, *log_params)

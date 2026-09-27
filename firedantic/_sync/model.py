@@ -34,6 +34,7 @@ from pydantic import PrivateAttr
 import firedantic.operators as op
 from firedantic import truncate_collection
 from firedantic.common import (
+    FieldIndexDefinition,
     IndexDefinition,
     OrderDirection,
     get_path_value,
@@ -148,6 +149,7 @@ class BareModel(pydantic.BaseModel, ABC):
     __document_id__: str
     __ttl_field__: Optional[str] = None
     __composite_indexes__: Optional[Iterable[IndexDefinition]] = None
+    __field_indexes__: Optional[Iterable[FieldIndexDefinition]] = None
     __db_config__: str = "(default)"  # override in subclasses when needed
     __collection_group__: Optional[str] = None
     __discriminator__: Optional[str] = None

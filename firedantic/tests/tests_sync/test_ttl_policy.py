@@ -30,6 +30,8 @@ def test_set_up_ttl_policies_new_policy(mock_admin_client):
     assert (
         mock_admin_client.updated_field["field"].ttl_config.state == Field.TtlConfig.State.CREATING
     )
+    # Only the TTL config is updated
+    assert mock_admin_client.updated_field["update_mask"] == {"paths": ["ttl_config"]}
 
 
 @pytest.mark.parametrize(

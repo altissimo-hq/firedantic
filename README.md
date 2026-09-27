@@ -438,10 +438,10 @@ link to create it.
 
 When Firestore rejects a query because an index is missing, firedantic raises
 `MissingIndexError`. It's a `FailedPrecondition`, like Firestore's own error, and its
-message shows the index to add: as a `__composite_indexes__` declaration where
-firedantic can express it, and as a `firestore.indexes.json` entry. Single-field indexes
-for collection group queries are shown as a `fieldOverrides` entry that keeps
-Firestore's automatic indexes for the field, since an override replaces them.
+message shows the index to add: as a `__composite_indexes__` or `__field_indexes__`
+declaration where firedantic can express it, and as a `firestore.indexes.json` entry.
+Single-field indexes for collection group queries are shown as a `fieldOverrides` entry
+that keeps Firestore's automatic indexes for the field, since an override replaces them.
 
 ```text
 Firestore needs an index for this query on collection group 'surveys'.
@@ -490,6 +490,29 @@ __composite_indexes__ = [
     collection_group_index(("content", Query.DESCENDING), ("expire", Query.ASCENDING)),
 ]
 ```
+
+### Defining Field Indexes
+
+Firestore creates single-field indexes automatically, but only for queries on a single
+collection. Collection group queries that filter or order on a field, like
+`find_in_group({"person_id": pid})`, need a single-field index with collection group
+scope. Declare those with `__field_indexes__`:
+
+```python
+from firedantic import AsyncSubModel, collection_group_field_index
+
+class Participation(AsyncSubModel):
+    __field_indexes__ = [
+        collection_group_field_index("person_id"),  # ascending and descending
+        collection_group_field_index("tags", order=False, array_contains=True),
+    ]
+```
+
+The field is a Firestore field path, so it uses aliases and dots for nested fields.
+`set_up_composite_indexes_and_ttl_policies()` creates them too, or use
+`set_up_field_indexes()` on its own. Each field gets an index override, which replaces
+Firestore's automatic indexes for it, so the override keeps the field's current indexes
+and adds the declared ones.
 
 ### Defining TTL Policies
 
