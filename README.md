@@ -235,8 +235,11 @@ Firestore matches collections by their last path segment only, so `animals/*/sur
 `sites/*/surveys` and a top-level `surveys` collection are all in the same group.
 Firedantic limits the query to documents below the model's top-level collection
 (including the configured prefix), and skips any remaining documents whose path doesn't
-match the collection template, such as `animals/*/visits/*/surveys`. That check runs
-after `limit` is applied, so to get full pages, also set `__discriminator__` to a field
+match the collection template, such as `animals/*/visits/*/surveys`. When documents are
+skipped, more are fetched to fill the page, so a page shorter than `limit` always means
+there are no more results.
+
+To avoid reading documents that are then skipped, set `__discriminator__` to a field
 whose default value identifies the model. It is added to the query as an equality
 filter. If the field doesn't exist or has no default, defining the model raises a
 `ValueError`.
@@ -287,7 +290,8 @@ next_page = await AnimalSurvey.find_in_group(
 )
 ```
 
-`offset` is supported as well, but Firestore bills for every document it skips.
+`offset` is supported as well, but Firestore bills for every document it skips, and the
+offset also counts documents skipped by the path check.
 
 ### Indexes
 

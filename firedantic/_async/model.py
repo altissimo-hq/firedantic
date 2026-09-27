@@ -389,8 +389,9 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         the configured prefix) are queried, and if `__discriminator__` is set, only
         documents whose discriminator field equals the field's default. Any remaining
         documents whose path does not match the collection template, such as
-        "animals/abc/visits/xyz/surveys/...", are skipped with a warning. That check
-        runs after `limit` is applied, so set a discriminator to get full pages.
+        "animals/abc/visits/xyz/surveys/...", are skipped with a warning, and more
+        documents are fetched to fill the page, so a page shorter than `limit` always
+        means there are no more results. `offset` counts skipped documents too.
 
         The returned models remember their document path, so `save()`, `reload()` and
         `delete()` work on them directly.
@@ -436,31 +437,49 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
                 query = query.order_by(field, direction=direction)  # type: ignore
             query = query.order_by(DOCUMENT_ID, direction=direction)  # type: ignore
 
+        cursor = None
         if start_after is not None:
-            query = query.start_after(await cls._get_cursor_snapshot(start_after, transaction))
-        if limit is not None:
-            query = query.limit(limit)  # type: ignore
-        if offset is not None:
-            query = query.offset(offset)  # type: ignore
+            cursor = await cls._get_cursor_snapshot(start_after, transaction)
 
         path_pattern = cls._get_collection_group_path_pattern()
-        models = []
-        async for doc in query.stream(transaction=transaction):  # type: ignore
-            if not path_pattern.match(doc.reference.path):
-                logger.warning(
-                    "Skipping %s in collection group query for %s: path does not match %s",
-                    doc.reference.path,
-                    cls.__name__,
-                    path_pattern.pattern,
-                )
-                continue
-            data = doc.to_dict()
-            if data is None:
-                continue
-            model = cls._model_from_data(doc.id, data)
-            model._firedantic_doc_ref = doc.reference  # type: ignore
-            models.append(model)
-        return models
+        models: List[TAsyncBareModel] = []
+        first_round = True
+        while True:
+            page_query = query
+            if cursor is not None:
+                page_query = page_query.start_after(cursor)
+            requested = None if limit is None else limit - len(models)
+            if requested is not None:
+                page_query = page_query.limit(requested)  # type: ignore
+            # Later rounds continue from the cursor, which is already past the offset
+            if offset is not None and first_round:
+                page_query = page_query.offset(offset)  # type: ignore
+            first_round = False
+
+            fetched = skipped = 0
+            async for doc in page_query.stream(transaction=transaction):  # type: ignore
+                fetched += 1
+                cursor = doc
+                if not path_pattern.match(doc.reference.path):
+                    logger.warning(
+                        "Skipping %s in collection group query for %s: path does not match %s",
+                        doc.reference.path,
+                        cls.__name__,
+                        path_pattern.pattern,
+                    )
+                    skipped += 1
+                    continue
+                data = doc.to_dict()
+                if data is None:
+                    continue
+                model = cls._model_from_data(doc.id, data)
+                model._firedantic_doc_ref = doc.reference  # type: ignore
+                models.append(model)
+
+            # Fetch more only when skipped documents left the page short and the
+            # query may still have more results
+            if requested is None or skipped == 0 or fetched < requested:
+                return models
 
     @classmethod
     async def find_one_in_group(

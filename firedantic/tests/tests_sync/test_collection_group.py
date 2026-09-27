@@ -139,6 +139,26 @@ def test_find_in_group_skips_mismatched_paths(caplog) -> None:
 
 
 
+def test_find_in_group_fills_pages_after_skipping() -> None:
+    _create_surveys()
+    # Nested documents sorting first, so the path check skips them from the first page
+    animal = (Animal.find())[0]
+    nested = animal._get_doc_ref().collection("visits").document("v").collection("surveys")
+    for score in range(5):
+        nested.document(f"nested-{score}").set({"kind": "animal_survey", "score": score})
+    order_by = [("score", Query.ASCENDING)]
+
+    page_1 = AnimalSurvey.find_in_group(order_by=order_by, limit=4)
+    page_2 = AnimalSurvey.find_in_group(order_by=order_by, limit=4, start_after=page_1[-1])
+    with_offset = AnimalSurvey.find_in_group(order_by=order_by, limit=4, offset=6)
+
+    assert [s.score for s in page_1] == [10, 11, 12, 20]
+    assert [s.score for s in page_2] == [21, 22]
+    # The offset counts the 5 skipped documents too
+    assert [s.score for s in with_offset] == [11, 12, 20, 21]
+
+
+
 def test_find_in_group_without_discriminator() -> None:
     _create_surveys()
     site = Site(name="mislabeled")
