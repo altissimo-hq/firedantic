@@ -1,3 +1,4 @@
+import asyncio
 from os import environ
 from unittest.mock import Mock
 
@@ -7,6 +8,7 @@ from google.cloud.firestore import AsyncClient, Client
 
 import firedantic.configurations as cfg_module
 from firedantic import Configuration, configure
+from firedantic.exceptions import CollectionNotDefined
 
 
 # --- tiny fake client classes to capture construction args ---
@@ -411,3 +413,58 @@ def test_legacy_configure_warns(monkeypatch):
         warnings.simplefilter("always")
         configure(FakeClient(), prefix="x")
         assert any(issubclass(w.category, DeprecationWarning) for w in rec)
+
+
+def test_lazy_async_client_recreated_on_another_event_loop(monkeypatch):
+    monkeypatch.setattr(cfg_module, "AsyncClient", FakeAsyncClient)
+    cfg = Configuration()
+    cfg.add(name="z", project="proj-z")
+
+    async def get():
+        return cfg.get_async_client("z")
+
+    async def get_twice():
+        return cfg.get_async_client("z"), cfg.get_async_client("z")
+
+    # Cached within one loop, recreated once that loop is gone
+    first, again = asyncio.run(get_twice())
+    assert first is again
+    assert asyncio.run(get()) is not first
+
+
+def test_provided_async_client_kept_across_event_loops():
+    cfg = Configuration()
+    provided = FakeAsyncClient()
+    cfg.add(name="w", project="proj-w", async_client=provided)
+
+    async def get():
+        return cfg.get_async_client("w")
+
+    assert asyncio.run(get()) is provided
+    assert asyncio.run(get()) is provided
+
+
+def test_collection_helpers_follow_model_rules():
+    cfg = Configuration()
+    client = Mock()
+    async_client = Mock()
+    cfg.add(name="things", prefix="t-", project="proj", client=client, async_client=async_client)
+
+    class Thing:
+        __collection__ = "things"
+        __db_config__ = "things"
+
+    class Nameless:
+        __collection__ = None
+
+    # The model's own config is used by default, an explicit one wins
+    assert cfg.get_collection_name(Thing) == "t-things"
+    assert cfg.get_collection_name(Thing, "(default)") == "things"
+    assert cfg.get_collection_ref(Thing) is client.collection.return_value
+    client.collection.assert_called_once_with("t-things")
+    assert cfg.get_async_collection_ref(Thing) is async_client.collection.return_value
+    async_client.collection.assert_called_once_with("t-things")
+
+    # No name is derived from the class name
+    with pytest.raises(CollectionNotDefined):
+        cfg.get_collection_name(Nameless)

@@ -99,7 +99,11 @@ async def test_delete_all(mock_client, MockModelClass):
 
     mock_doc = MagicMock()
     mock_doc.reference = document_mock
-    document_mock.delete = AsyncMock()
+    batch_mock = MagicMock()
+    batch_mock.commit = AsyncMock()
+    mock_client.batch = MagicMock(return_value=batch_mock)
+    collection_mock._client = mock_client
+    collection_mock.limit.return_value = collection_mock
 
     async def async_stream():
         yield mock_doc
@@ -110,7 +114,9 @@ async def test_delete_all(mock_client, MockModelClass):
     await MockModelClass.delete_all()
 
     assert collection_mock.stream.called
-    assert document_mock.delete.call_count == 2
+    # Deleted with one batched write instead of one request per document
+    assert batch_mock.delete.call_args_list == [((document_mock,),), ((document_mock,),)]
+    batch_mock.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
