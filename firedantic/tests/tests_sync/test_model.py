@@ -130,6 +130,52 @@ def test_count(create_product) -> None:
 
 
 
+def test_sum_and_avg(create_product) -> None:
+    assert Product.sum("stock") == 0
+    assert Product.avg("stock") is None
+
+    for p in TEST_PRODUCTS:
+        create_product(**p, price=1.5)
+
+    assert Product.sum("stock") == 6
+    assert Product.sum("stock", {"stock": {op.GTE: 2}}) == 5
+    assert Product.sum("price") == 6.0
+    assert Product.avg("stock") == 1.5
+    assert Product.avg("stock", {"stock": {op.GTE: 2}}) == 2.5
+    assert Product.avg("stock", {"product_id": "missing"}) is None
+
+
+
+def test_sum_and_avg_paths() -> None:
+    Counter(totalCount=1, stats=CounterStats(visits=2)).save()
+    Counter(totalCount=3, stats=CounterStats(visits=4)).save()
+    # Values that aren't numbers are ignored
+    Counter(id="no-count").save()
+    Counter(id="no-count", optional=1).save(exclude_unset=True)
+
+    assert Counter.sum("totalCount") == 4
+    assert Counter.sum("stats.visits") == 6
+    assert Counter.avg("totalCount") == 2.0
+    assert Counter.avg("optional") == 1.0
+    assert Counter.avg("missing") is None
+
+
+
+def test_sum_and_avg_in_transaction(create_product) -> None:
+    create_product(stock=2)
+    create_product(stock=4)
+
+    @transactional
+    def read_in_transaction(transaction: Transaction):
+        return (
+            Product.sum("stock", transaction=transaction),
+            Product.avg("stock", transaction=transaction),
+        )
+
+    assert read_in_transaction(get_transaction()) == (6, 3.0)
+
+
+
 def test_get_by_ids(create_company) -> None:
     company_a = create_company(company_id="1234555-1")
     company_b = create_company(company_id="1231231-2")

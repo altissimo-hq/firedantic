@@ -188,6 +188,23 @@ def test_count_in_group() -> None:
 
 
 
+def test_sum_and_avg_in_group() -> None:
+    assert AnimalSurvey.sum_in_group("score") == 0
+    assert AnimalSurvey.avg_in_group("score") is None
+
+    _create_surveys()
+
+    assert AnimalSurvey.sum_in_group("score") == 96
+    assert AnimalSurvey.sum_in_group("score", {"score": {">=": 12}}) == 75
+    assert AnimalSurvey.avg_in_group("score") == 16.0
+    assert AnimalSurvey.avg_in_group("score", {"status": "closed"}) is None
+    assert AnimalSurvey.sum_in_group("score", {"status": {"!=": "closed"}}) == 96
+    # Surveys under sites/ and the top-level surveys are outside animals/
+    assert SiteSurvey.sum_in_group("score") == 100
+    assert Survey.avg_in_group("score") == 200.0
+
+
+
 def test_count_in_group_includes_mismatched_paths() -> None:
     _create_surveys()
     animal = (Animal.find())[0]

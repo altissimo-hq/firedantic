@@ -156,9 +156,19 @@ Product.find(order_by=[('unit_value', Query.ASCENDING), ('stock', Query.DESCENDI
 Product.count()
 Product.count({"stock": {op.GTE: 3}})
 
+# Sum and average a numeric field of matching documents without reading them
+Product.sum("stock")
+Product.avg("unit_value", {"stock": {op.GTE: 3}})
+
 # Fetch several documents by ID in one request; missing ones are left out
 Product.get_by_ids(["id-1", "id-2"])
 ```
+
+`sum()` and `avg()` take a Firestore field path, so they use field aliases and dots for
+nested fields. Values that aren't numbers are ignored. The sum of no values is 0, and
+the average is `None` if no matching document has the field. If the field exists but has
+no numbers, the average is 0.0, because the Firestore client library reads Firestore's
+null result as 0.0.
 
 The query operators are found at
 [https://firebase.google.com/docs/firestore/query-data/queries#query_operators](https://firebase.google.com/docs/firestore/query-data/queries#query_operators).
@@ -347,6 +357,13 @@ that `find_in_group()` would skip, like `animals/*/visits/*/surveys`, unless the
 
 ```python
 open_surveys = await AnimalSurvey.count_in_group({"status": "open"})
+```
+
+`sum_in_group()` and `avg_in_group()` work the same way for sums and averages.
+
+```python
+total_score = await AnimalSurvey.sum_in_group("score", {"status": "open"})
+average_score = await AnimalSurvey.avg_in_group("score")
 ```
 
 ### Pagination
@@ -646,6 +663,7 @@ Firedantic has basic support for
 The following methods can be used in a transaction for both **sync** and **async**
 models:
 
+- `Model.avg(field, transaction=transaction)`
 - `Model.count(transaction=transaction)`
 - `Model.create(transaction=transaction)`
 - `Model.delete(transaction=transaction)`
@@ -658,6 +676,7 @@ models:
 - `Model.increment(field, amount, transaction=transaction)`
 - `Model.reload(transaction=transaction)`
 - `Model.save(transaction=transaction)`
+- `Model.sum(field, transaction=transaction)`
 - `Model.update(*fields, transaction=transaction)`
 - `Model.update(changes, transaction=transaction)`
 - `SubModel.get_by_id(transaction=transaction)`

@@ -528,14 +528,102 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         :param transaction: Optional transaction to use.
         :return: Number of matching models.
         """
+        query = cls._get_query(filter_)
+        return int(await cls._get_aggregate(query.count(), transaction))
+
+    @classmethod
+    async def sum(
+        cls,
+        field: str,
+        filter_: Optional[Dict[str, Any]] = None,
+        transaction: Optional[AsyncTransaction] = None,
+    ) -> Union[int, float]:
+        """
+        Returns the sum of a numeric field over the models matching a filter, using a
+        sum aggregation query, so the documents themselves are not read.
+
+        `field` is a Firestore field path, so it uses field aliases and dots for nested
+        fields. Values that aren't numbers are ignored, and the sum of no values is 0.
+
+        Example: `Product.sum("stock", {"price": {">=": 10}})`.
+
+        :param field: Firestore field path to sum.
+        :param filter_: The filter criteria.
+        :param transaction: Optional transaction to use.
+        :return: Sum of the field.
+        """
+        query = cls._get_query(filter_)
+        total: Union[int, float] = await cls._get_aggregate(query.sum(field), transaction)
+        return total
+
+    @classmethod
+    async def avg(
+        cls,
+        field: str,
+        filter_: Optional[Dict[str, Any]] = None,
+        transaction: Optional[AsyncTransaction] = None,
+    ) -> Optional[float]:
+        """
+        Returns the average of a numeric field over the models matching a filter, using
+        an average aggregation query, so the documents themselves are not read.
+
+        `field` is a Firestore field path, so it uses field aliases and dots for nested
+        fields. Values that aren't numbers are ignored. The average is None if no
+        matching model has the field, and 0.0 if the field has no numbers, because
+        the Firestore client library reads Firestore's null result as 0.0.
+
+        Example: `Product.avg("price", {"stock": {">=": 1}})`.
+
+        :param field: Firestore field path to average.
+        :param filter_: The filter criteria.
+        :param transaction: Optional transaction to use.
+        :return: Average of the field, or None if no matching model has the field.
+        """
+        return await cls._get_average(cls._get_query(filter_), field, transaction)
+
+    @classmethod
+    def _get_query(
+        cls, filter_: Optional[Dict[str, Any]]
+    ) -> Union[AsyncQuery, AsyncCollectionReference]:
+        """
+        Returns the query for the model's collection with `filter_` applied.
+        """
         query: Union[AsyncQuery, AsyncCollectionReference] = cls._get_col_ref()
         if filter_:
             for key, value in filter_.items():
                 query = cls._add_filter(query, key, value)
+        return query
 
-        results = await query.count().get(transaction=transaction)  # type: ignore
+    @staticmethod
+    async def _get_aggregate(
+        aggregation_query: Any, transaction: Optional[AsyncTransaction]
+    ) -> Any:
+        """
+        Runs an aggregation query with a single aggregation and returns its value.
+        """
+        results = await aggregation_query.get(transaction=transaction)
         # Sync stubs type the result as a flat list, but both return one list per query
-        return int(results[0][0].value)  # type: ignore[index]
+        return results[0][0].value
+
+    @staticmethod
+    async def _get_average(
+        query: Union[AsyncQuery, AsyncCollectionReference],
+        field: str,
+        transaction: Optional[AsyncTransaction],
+    ) -> Optional[float]:
+        """
+        Returns the average of `field` over the documents of `query`, or None if none
+        of them has the field.
+        """
+        # The client decodes a null average as 0.0, so count the documents to tell an
+        # empty result apart. Like the average, the count only includes documents
+        # that have the field.
+        aggregation_query = query.count(alias="count").avg(field, alias="avg")  # type: ignore
+        results = await aggregation_query.get(transaction=transaction)
+        values = {result.alias: result.value for result in results[0]}
+        if not values["count"]:
+            return None
+        return float(values["avg"])
 
     @classmethod
     def _model_from_data(
@@ -673,8 +761,66 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         :return: Number of matching models.
         """
         query = cls._get_group_query(filter_)
-        results = await query.count().get(transaction=transaction)  # type: ignore
-        return int(results[0][0].value)  # type: ignore[index]
+        return int(await cls._get_aggregate(query.count(), transaction))
+
+    @classmethod
+    async def sum_in_group(
+        cls,
+        field: str,
+        filter_: Optional[Dict[str, Any]] = None,
+        transaction: Optional[AsyncTransaction] = None,
+    ) -> Union[int, float]:
+        """
+        Returns the sum of a numeric field over the models matching a filter in the
+        model's collection group, using a sum aggregation query. Works like `sum()`,
+        and like `count_in_group()` it includes documents whose path doesn't match the
+        collection template.
+
+        Example: `AnimalSurvey.sum_in_group("score", {"status": "open"})`.
+
+        :param field: Firestore field path to sum.
+        :param filter_: The filter criteria.
+        :param transaction: Optional transaction to use.
+        :return: Sum of the field.
+        """
+        query = cls._get_group_aggregation_query(filter_, field)
+        total: Union[int, float] = await cls._get_aggregate(query.sum(field), transaction)
+        return total
+
+    @classmethod
+    async def avg_in_group(
+        cls,
+        field: str,
+        filter_: Optional[Dict[str, Any]] = None,
+        transaction: Optional[AsyncTransaction] = None,
+    ) -> Optional[float]:
+        """
+        Returns the average of a numeric field over the models matching a filter in the
+        model's collection group, using an average aggregation query. Works like
+        `avg()`, and like `count_in_group()` it includes documents whose path doesn't
+        match the collection template.
+
+        Example: `AnimalSurvey.avg_in_group("score", {"status": "open"})`.
+
+        :param field: Firestore field path to average.
+        :param filter_: The filter criteria.
+        :param transaction: Optional transaction to use.
+        :return: Average of the field, or None if no matching model has the field.
+        """
+        query = cls._get_group_aggregation_query(filter_, field)
+        return await cls._get_average(query, field, transaction)
+
+    @classmethod
+    def _get_group_aggregation_query(
+        cls, filter_: Optional[Dict[str, Any]], field: str
+    ) -> AsyncQuery:
+        """
+        Returns the collection group query for a sum or average of `field`.
+        """
+        # Firestore rejects a sum or average with the path range unless the query is
+        # ordered by the field. Ordering only skips documents without the field, which
+        # the aggregation skips anyway.
+        return cls._get_group_query(filter_).order_by(field)
 
     @classmethod
     def _get_group_query(cls, filter_: Optional[Dict[str, Any]]) -> AsyncQuery:

@@ -188,6 +188,23 @@ async def test_count_in_group() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sum_and_avg_in_group() -> None:
+    assert await AnimalSurvey.sum_in_group("score") == 0
+    assert await AnimalSurvey.avg_in_group("score") is None
+
+    await _create_surveys()
+
+    assert await AnimalSurvey.sum_in_group("score") == 96
+    assert await AnimalSurvey.sum_in_group("score", {"score": {">=": 12}}) == 75
+    assert await AnimalSurvey.avg_in_group("score") == 16.0
+    assert await AnimalSurvey.avg_in_group("score", {"status": "closed"}) is None
+    assert await AnimalSurvey.sum_in_group("score", {"status": {"!=": "closed"}}) == 96
+    # Surveys under sites/ and the top-level surveys are outside animals/
+    assert await SiteSurvey.sum_in_group("score") == 100
+    assert await Survey.avg_in_group("score") == 200.0
+
+
+@pytest.mark.asyncio
 async def test_count_in_group_includes_mismatched_paths() -> None:
     await _create_surveys()
     animal = (await Animal.find())[0]
