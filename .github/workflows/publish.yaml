@@ -49,6 +49,8 @@ jobs:
   publish:
     name: Publish
     needs: build
+    # Only publish from the upstream repo; forks can't publish to PyPI
+    if: github.repository == 'ioxiocom/firedantic'
     runs-on: ubuntu-latest
     environment: PyPI
     permissions:
