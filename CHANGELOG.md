@@ -9,6 +9,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Added `MissingIndexError`, raised when Firestore rejects a query because an index is
+  missing. Its message shows the index as a firedantic declaration and as a
+  `firestore.indexes.json` entry, decoded from the console link in Firestore's error.
 - Added a `recursive` option to `delete()`, which also deletes the documents in all
   subcollections below the model's document and returns the number of deleted documents.
   Firestore doesn't delete subcollections with their parent, so without it they are left
