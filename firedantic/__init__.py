@@ -6,6 +6,9 @@ from firedantic._async.indexes import (
 from firedantic._async.indexes import (
     set_up_composite_indexes_and_ttl_policies as async_set_up_composite_indexes_and_ttl_policies,
 )
+from firedantic._async.indexes import (
+    set_up_field_indexes as async_set_up_field_indexes,
+)
 from firedantic._async.model import (
     AsyncBareModel,
     AsyncBareSubCollection,
@@ -21,6 +24,7 @@ from firedantic._sync.helpers import truncate_collection
 from firedantic._sync.indexes import (
     set_up_composite_indexes,
     set_up_composite_indexes_and_ttl_policies,
+    set_up_field_indexes,
 )
 from firedantic._sync.model import (
     BareModel,
@@ -31,7 +35,11 @@ from firedantic._sync.model import (
     SubModel,
 )
 from firedantic._sync.ttl_policy import set_up_ttl_policies
-from firedantic.common import collection_group_index, collection_index
+from firedantic.common import (
+    collection_group_field_index,
+    collection_group_index,
+    collection_index,
+)
 from firedantic.configurations import (
     CONFIGURATIONS,
     ConfigItem,

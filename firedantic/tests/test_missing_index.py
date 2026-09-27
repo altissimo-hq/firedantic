@@ -109,7 +109,8 @@ def test_field_override() -> None:
     error = get_missing_index_error(error_for("exemption", Field.serialize(field)))
     assert error is not None
     assert error.is_field_override
-    assert error.declaration is None
+    assert error.declaration == 'collection_group_field_index("person_id")'
+    assert "Add it to the model's __field_indexes__" in error.message
     # The override keeps the automatic indexes, which it would replace otherwise
     assert error.index_json == {
         "collectionGroup": "participations",
@@ -121,11 +122,30 @@ def test_field_override() -> None:
             {"order": "ASCENDING", "queryScope": "COLLECTION_GROUP"},
         ],
     }
-    assert 'Add it to "fieldOverrides"' in error.message
+    assert 'Or add it to "fieldOverrides"' in error.message
     # The message shows valid JSON
     start = error.message.index("{")
     end = error.message.rindex("}") + 1
     assert json.loads(error.message[start:end]) == error.index_json
+
+
+def test_field_override_array_contains() -> None:
+    field = Field(
+        name=f"{PARENT}/participations/fields/tags",
+        index_config=Field.IndexConfig(
+            indexes=[
+                Index(
+                    query_scope=Index.QueryScope.COLLECTION_GROUP,
+                    fields=[Index.IndexField(array_config=Index.IndexField.ArrayConfig.CONTAINS)],
+                )
+            ]
+        ),
+    )
+    error = get_missing_index_error(error_for("exemption", Field.serialize(field)))
+    assert error is not None
+    assert error.declaration == (
+        'collection_group_field_index("tags", order=False, array_contains=True)'
+    )
 
 
 def test_other_errors_are_raised_as_they_are() -> None:

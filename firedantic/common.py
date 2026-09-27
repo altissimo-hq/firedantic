@@ -1,4 +1,4 @@
-from typing import Any, Dict, Literal, NamedTuple, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, NamedTuple, Optional, Tuple, Union
 
 import pydantic
 from google.cloud.firestore_v1.field_path import FieldPath
@@ -11,6 +11,55 @@ IndexField = NamedTuple("IndexField", [("name", str), ("order", OrderDirection)]
 IndexDefinition = NamedTuple(
     "IndexDefinition", [("query_scope", str), ("fields", Tuple[IndexField, ...])]
 )
+
+
+FieldIndexDefinition = NamedTuple(
+    "FieldIndexDefinition", [("field_path", str), ("order", bool), ("array_contains", bool)]
+)
+
+# The single-field indexes Firestore creates automatically for each field, as
+# firestore.indexes.json entries. A field override replaces them, so it must list
+# them to keep them.
+AUTOMATIC_FIELD_INDEXES: List[Dict[str, str]] = [
+    {"order": "ASCENDING", "queryScope": "COLLECTION"},
+    {"order": "DESCENDING", "queryScope": "COLLECTION"},
+    {"arrayConfig": "CONTAINS", "queryScope": "COLLECTION"},
+]
+
+
+def collection_group_field_index(
+    field_path: str, *, order: bool = True, array_contains: bool = False
+) -> FieldIndexDefinition:
+    """
+    Declares single-field indexes with collection group scope for a field, which
+    collection group queries on the field need. Firestore only creates single-field
+    indexes with collection scope automatically.
+
+    :param field_path: Firestore field path, using field aliases and dots for nested
+        fields.
+    :param order: Whether to add ascending and descending indexes, for filters and
+        ordering on the field.
+    :param array_contains: Whether to add an array-contains index, for `array_contains`
+        and `array_contains_any` filters on the field.
+    :return: FieldIndexDefinition tuple
+    """
+    if not order and not array_contains:
+        raise ValueError("A field index needs order or array_contains")
+    return FieldIndexDefinition(field_path, order, array_contains)
+
+
+def get_field_index_entries(index: FieldIndexDefinition) -> List[Dict[str, str]]:
+    """
+    Returns the collection group indexes that a field index declares, as
+    firestore.indexes.json entries.
+    """
+    entries = []
+    if index.order:
+        entries.append({"order": "ASCENDING", "queryScope": "COLLECTION_GROUP"})
+        entries.append({"order": "DESCENDING", "queryScope": "COLLECTION_GROUP"})
+    if index.array_contains:
+        entries.append({"arrayConfig": "CONTAINS", "queryScope": "COLLECTION_GROUP"})
+    return entries
 
 
 def collection_index(*fields: IndexField) -> IndexDefinition:

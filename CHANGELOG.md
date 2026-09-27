@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Added `__field_indexes__` and `collection_group_field_index()` for declaring the
+  single-field indexes with collection group scope that collection group queries need.
+  `set_up_field_indexes()` creates them as field overrides that keep the field's current
+  indexes, and `set_up_composite_indexes_and_ttl_policies()` now creates them too.
+  `MissingIndexError` shows the declaration for missing single-field indexes.
 - Added `MissingIndexError`, raised when Firestore rejects a query because an index is
   missing. Its message shows the index as a firedantic declaration and as a
   `firestore.indexes.json` entry, decoded from the console link in Firestore's error.
@@ -17,6 +22,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Firestore doesn't delete subcollections with their parent, so without it they are left
   behind and still found by collection group queries. It's not atomic and raises
   `ValueError` in a transaction or batch.
+
+### Changed
+
+- The index and TTL setup functions take the database from each model's configuration
+  when `database` isn't given, instead of always using `(default)`. The field index
+  setup takes the project from it too.
+
+### Fixed
+
+- TTL policy setup only updates the field's TTL config, so it can't undo a change to the
+  field's indexes.
 
 ## [0.18.0] - 2026-09-27
 

@@ -8,6 +8,7 @@ from urllib.parse import unquote
 from google.api_core.exceptions import FailedPrecondition
 from google.cloud.firestore_admin_v1.types import Field, Index
 
+from firedantic.common import AUTOMATIC_FIELD_INDEXES
 from firedantic.exceptions import MissingIndexError
 
 # Firestore's missing index errors link to the Firebase console, with the index to
@@ -15,14 +16,6 @@ from firedantic.exceptions import MissingIndexError
 # message for single-field index overrides
 _LINK = re.compile(r"https://\S+?[?&]create_(composite|exemption)=([A-Za-z0-9_\-+/=%]+)")
 _COLLECTION_GROUP = re.compile(r"/collectionGroups/([^/]+)/")
-
-# The indexes Firestore creates automatically for each field. A field override
-# replaces them, so it must list them to keep them.
-_AUTOMATIC_FIELD_INDEXES: List[Dict[str, str]] = [
-    {"order": "ASCENDING", "queryScope": "COLLECTION"},
-    {"order": "DESCENDING", "queryScope": "COLLECTION"},
-    {"arrayConfig": "CONTAINS", "queryScope": "COLLECTION"},
-]
 
 
 @contextmanager
@@ -68,7 +61,8 @@ def get_missing_index_error(error: FailedPrecondition) -> Optional[MissingIndexE
         f"Firestore needs an index for this query on collection group '{collection_group}'.",
     ]
     if declaration:
-        lines.append(f"Add it to the model's __composite_indexes__:\n    {declaration}")
+        attribute = "__field_indexes__" if is_field_override else "__composite_indexes__"
+        lines.append(f"Add it to the model's {attribute}:\n    {declaration}")
     lines.append(
         f'{"Or add" if declaration else "Add"} it to "{section}" in firestore.indexes.json:\n'
         + _indent(_format_json(index_json))
@@ -142,7 +136,7 @@ def _parse_exemption(field: Field) -> Optional[Tuple[str, Dict[str, Any], Option
     if collection_group is None or not field_path:
         return None
 
-    indexes = list(_AUTOMATIC_FIELD_INDEXES)
+    indexes = list(AUTOMATIC_FIELD_INDEXES)
     for index in field.index_config.indexes:
         query_scope = Index.QueryScope(index.query_scope).name
         for index_field in index.fields:
@@ -157,7 +151,21 @@ def _parse_exemption(field: Field) -> Optional[Tuple[str, Dict[str, Any], Option
                 indexes.append(entry)
 
     index_json = {"collectionGroup": collection_group, "fieldPath": field_path, "indexes": indexes}
-    return collection_group, index_json, None
+
+    # collection_group_field_index() declares collection group indexes, which is what
+    # collection group queries need
+    added = [i for i in indexes if i not in AUTOMATIC_FIELD_INDEXES]
+    declaration = None
+    if added and all(i["queryScope"] == "COLLECTION_GROUP" for i in added):
+        options = []
+        if not any("order" in i for i in added):
+            options.append("order=False")
+        if any("arrayConfig" in i for i in added):
+            options.append("array_contains=True")
+        declaration = (
+            f"collection_group_field_index({', '.join([json.dumps(field_path), *options])})"
+        )
+    return collection_group, index_json, declaration
 
 
 def _format_json(entry: Dict[str, Any]) -> str:

@@ -38,6 +38,7 @@ SUBS = [
         "set_up_composite_indexes_and_ttl_policies",
     ),
     ("async_set_up_composite_indexes", "set_up_composite_indexes"),
+    ("async_set_up_field_indexes", "set_up_field_indexes"),
     ("await ", ""),
     ("__aenter__", "__enter__"),
     ("__aexit__", "__exit__"),
