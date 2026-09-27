@@ -7,6 +7,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Added `sum()` and `avg()` to models, which sum and average a numeric field of the
+  matching documents with an aggregation query, and `sum_in_group()` and
+  `avg_in_group()` for the model's collection group. The average is `None` if no
+  matching document has the field.
+
 ## [0.17.0] - 2026-09-27
 
 ### Added

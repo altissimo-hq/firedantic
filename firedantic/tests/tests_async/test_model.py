@@ -130,6 +130,52 @@ async def test_count(create_product) -> None:
 
 
 @pytest.mark.asyncio
+async def test_sum_and_avg(create_product) -> None:
+    assert await Product.sum("stock") == 0
+    assert await Product.avg("stock") is None
+
+    for p in TEST_PRODUCTS:
+        await create_product(**p, price=1.5)
+
+    assert await Product.sum("stock") == 6
+    assert await Product.sum("stock", {"stock": {op.GTE: 2}}) == 5
+    assert await Product.sum("price") == 6.0
+    assert await Product.avg("stock") == 1.5
+    assert await Product.avg("stock", {"stock": {op.GTE: 2}}) == 2.5
+    assert await Product.avg("stock", {"product_id": "missing"}) is None
+
+
+@pytest.mark.asyncio
+async def test_sum_and_avg_paths() -> None:
+    await Counter(totalCount=1, stats=CounterStats(visits=2)).save()
+    await Counter(totalCount=3, stats=CounterStats(visits=4)).save()
+    # Values that aren't numbers are ignored
+    await Counter(id="no-count").save()
+    await Counter(id="no-count", optional=1).save(exclude_unset=True)
+
+    assert await Counter.sum("totalCount") == 4
+    assert await Counter.sum("stats.visits") == 6
+    assert await Counter.avg("totalCount") == 2.0
+    assert await Counter.avg("optional") == 1.0
+    assert await Counter.avg("missing") is None
+
+
+@pytest.mark.asyncio
+async def test_sum_and_avg_in_transaction(create_product) -> None:
+    await create_product(stock=2)
+    await create_product(stock=4)
+
+    @async_transactional
+    async def read_in_transaction(transaction: AsyncTransaction):
+        return (
+            await Product.sum("stock", transaction=transaction),
+            await Product.avg("stock", transaction=transaction),
+        )
+
+    assert await read_in_transaction(get_async_transaction()) == (6, 3.0)
+
+
+@pytest.mark.asyncio
 async def test_get_by_ids(create_company) -> None:
     company_a = await create_company(company_id="1234555-1")
     company_b = await create_company(company_id="1231231-2")
