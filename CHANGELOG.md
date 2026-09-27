@@ -7,6 +7,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Added a `merge` option to `save()`, which writes only the saved fields and keeps the
+  other fields of the stored document. With `exclude_unset=True` it saves only the
+  fields that were set.
+- Added `create()` to models, which saves the model as a new document and fails with
+  `AlreadyExists` if the document already exists.
+- Added `update()` to models, which updates fields of the stored document and fails with
+  `NotFound` if the document doesn't exist. It takes model field names, whose current
+  values it writes, or a dict of Firestore field paths and values like Firestore's
+  `update()`, which it validates and applies to the model instance.
+
 ## [0.16.0] - 2026-09-27
 
 ### Added

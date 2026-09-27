@@ -3,7 +3,9 @@ from typing import Dict, Optional
 from uuid import uuid4
 
 import pytest
+from google.api_core.exceptions import AlreadyExists, NotFound
 from google.cloud.firestore import Query, transactional
+from google.cloud.firestore_v1 import DELETE_FIELD, Increment
 from google.cloud.firestore_v1.transaction import Transaction
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -235,6 +237,203 @@ def test_increment_in_transaction() -> None:
     assert counter.total == 0
     counter.reload()
     assert counter.total == 2
+
+def get_stored_data(model: Model) -> Optional[Dict]:
+    # pylint: disable=protected-access
+    return (model._get_doc_ref().get()).to_dict()
+
+
+
+def test_save_merge() -> None:
+    p = Profile(name="Foo", photo_url="old")
+    p.save()
+    assert p.id
+
+    # Only the set fields are written, the stored name is kept
+    Profile(id=p.id, photo_url="new").save(exclude_unset=True, merge=True)
+    assert get_stored_data(p) == {"name": "Foo", "photo_url": "new"}
+
+    # Without merge the document is replaced
+    Profile(id=p.id, photo_url="newer").save(exclude_unset=True)
+    assert get_stored_data(p) == {"photo_url": "newer"}
+
+
+
+def test_save_merge_in_transaction() -> None:
+    p = Profile(name="Foo", photo_url="old")
+    p.save()
+
+    @transactional
+    def save_in_transaction(transaction: Transaction) -> None:
+        Profile(id=p.id, photo_url="new").save(
+            exclude_unset=True, merge=True, transaction=transaction
+        )
+
+    save_in_transaction(get_transaction())
+    assert get_stored_data(p) == {"name": "Foo", "photo_url": "new"}
+
+
+
+def test_create() -> None:
+    p = Profile(name="Foo")
+    p.create()
+    assert p.id
+    assert Profile.get_by_id(p.id) == p
+
+    with pytest.raises(AlreadyExists):
+        Profile(id=p.id, name="Bar").create()
+    assert (Profile.get_by_id(p.id)).name == "Foo"
+
+
+
+def test_create_in_transaction() -> None:
+    p = Profile(name="Foo")
+    p.create()
+
+    @transactional
+    def create_in_transaction(transaction: Transaction) -> None:
+        Profile(id=p.id, name="Bar").create(transaction=transaction)
+
+    with pytest.raises(AlreadyExists):
+        create_in_transaction(get_transaction())
+    assert p.id
+    assert (Profile.get_by_id(p.id)).name == "Foo"
+
+
+
+def test_update() -> None:
+    counter = Counter(totalCount=1, by_day={"mon": 1})
+    counter.save()
+    assert counter.id
+
+    # Another writer changes a field this instance doesn't write
+    Counter(id=counter.id, optional=7).save(exclude_unset=True, merge=True)
+
+    counter.total = 5
+    counter.stats.visits = 3
+    counter.optional = None
+    counter.update("total", "stats")
+    assert get_stored_data(counter) == {
+        "totalCount": 5,
+        "stats": {"visits": 3},
+        "by_day": {"mon": 1},
+        "optional": 7,
+    }
+
+    # Without fields all of them are written
+    counter.update()
+    assert Counter.get_by_id(counter.id) == counter
+
+
+
+def test_update_errors() -> None:
+    with pytest.raises(ModelNotFoundError):
+        Counter().update("total")
+
+    with pytest.raises(NotFound):
+        Counter(id=str(uuid4())).update("total")
+
+    counter = Counter()
+    counter.save()
+    with pytest.raises(ValueError):
+        counter.update("totalCount")
+
+
+
+def test_update_in_transaction() -> None:
+    counter = Counter()
+    counter.save()
+
+    @transactional
+    def update_in_transaction(transaction: Transaction) -> None:
+        counter.total = 2
+        counter.update("total", transaction=transaction)
+
+    update_in_transaction(get_transaction())
+    assert counter.id
+    assert (Counter.get_by_id(counter.id)).total == 2
+
+
+
+def test_update_changes() -> None:
+    counter = Counter(by_day={"mon": 1})
+    counter.save()
+    assert counter.id
+
+    # Another writer changes a field this instance doesn't write
+    Counter(id=counter.id, optional=7).save(exclude_unset=True, merge=True)
+
+    counter.update({"totalCount": 4, "stats.visits": 2, "by_day.tue": 5})
+    assert counter.total == 4
+    assert counter.stats.visits == 2
+    assert counter.by_day == {"mon": 1, "tue": 5}
+    assert get_stored_data(counter) == {
+        "totalCount": 4,
+        "stats": {"visits": 2},
+        "by_day": {"mon": 1, "tue": 5},
+        "optional": 7,
+    }
+
+    # Values are serialized like save() does
+    counter.update({"stats": CounterStats(visits=9)})
+    assert counter.stats.visits == 9
+    assert (get_stored_data(counter))["stats"] == {"visits": 9}  # type: ignore[index]
+
+
+
+def test_update_changes_validation() -> None:
+    counter = Counter(totalCount=1)
+    counter.save()
+
+    with pytest.raises(ValidationError):
+        counter.update({"totalCount": "many"})
+    assert counter.total == 1
+    assert (get_stored_data(counter))["totalCount"] == 1  # type: ignore[index]
+
+
+
+def test_update_changes_transforms() -> None:
+    counter = Counter(totalCount=1, optional=3)
+    counter.save()
+    assert counter.id
+
+    counter.update({"totalCount": Increment(2), "optional": DELETE_FIELD})
+    assert counter.total == 3
+    assert "optional" not in get_stored_data(counter)  # type: ignore[operator]
+    counter.reload()
+    assert counter.optional is None
+
+
+
+def test_update_changes_errors() -> None:
+    with pytest.raises(ModelNotFoundError):
+        Counter().update({"totalCount": 1})
+
+    with pytest.raises(NotFound):
+        Counter(id=str(uuid4())).update({"totalCount": 1})
+
+    counter = Counter()
+    counter.save()
+    with pytest.raises(TypeError):
+        counter.update({"totalCount": 1}, "total")  # type: ignore[call-overload]
+
+
+
+def test_update_changes_in_transaction() -> None:
+    counter = Counter()
+    counter.save()
+
+    @transactional
+    def update_in_transaction(transaction: Transaction) -> None:
+        counter.update({"stats.visits": 2}, transaction=transaction)
+
+    update_in_transaction(get_transaction())
+
+    # The write happens on commit, so the instance is not changed
+    assert counter.stats.visits == 0
+    counter.reload()
+    assert counter.stats.visits == 2
+
 
 
 def test_find_not_in(create_company) -> None:
