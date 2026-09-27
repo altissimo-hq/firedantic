@@ -47,10 +47,10 @@ async def test_old_way():
 
     # Finding data from DB
     print(
-        f"\nNumber of company owners with first name: 'Bill': {len(await Company.find({"owner.first_name": "Bill"}))}"
+        f"\nNumber of company owners with first name: 'Bill': {len(await Company.find({'owner.first_name': 'Bill'}))}"
     )
     print(
-        f"\nNumber of companies with id: '1234567-7': {len(await Company.find({"company_id": "1234567-7"}))}"
+        f"\nNumber of companies with id: '1234567-7': {len(await Company.find({'company_id': '1234567-7'}))}"
     )
 
     # Delete everything from the database
@@ -106,11 +106,11 @@ async def test_with_default():
 
     # Finding data from DB
     print(
-        f"\nNumber of company owners with first name: 'John': {len(await Company.find({"owner.first_name": "John"}))}"
+        f"\nNumber of company owners with first name: 'John': {len(await Company.find({'owner.first_name': 'John'}))}"
     )
 
     print(
-        f"\nNumber of companies with id: '1234567-8a': {len(await Company.find({"company_id": "1234567-8a"}))}"
+        f"\nNumber of companies with id: '1234567-8a': {len(await Company.find({'company_id': '1234567-8a'}))}"
     )
 
     # Delete everything from the database
@@ -227,15 +227,15 @@ async def test_with_multiple():
 
     # 3. Finding data
     print(
-        f"\nNumber of company owners with first name: 'Alice': {len(await Company.find({"owner.first_name": "Alice"}))}"
+        f"\nNumber of company owners with first name: 'Alice': {len(await Company.find({'owner.first_name': 'Alice'}))}"
     )
 
     print(
-        f"\nNumber of billing companies with id: '1234567-8c': {len(await BillingCompany.find({"company_id": "1234567-8c"}))}"
+        f"\nNumber of billing companies with id: '1234567-8c': {len(await BillingCompany.find({'company_id': '1234567-8c'}))}"
     )
 
     print(
-        f"\nNumber of billing accounts with billing_id: 801048: {len(await BillingCompany.find({"billing_account.billing_id": 801048}))}"
+        f"\nNumber of billing accounts with billing_id: 801048: {len(await BillingCompany.find({'billing_account.billing_id': 801048}))}"
     )
 
     # Delete everything from the database

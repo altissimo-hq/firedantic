@@ -47,10 +47,10 @@ def test_old_way():
 
     # Finding data from DB
     print(
-        f"\nNumber of company owners with first name: 'Bill': {len(Company.find({"owner.first_name": "Bill"}))}"
+        f"\nNumber of company owners with first name: 'Bill': {len(Company.find({'owner.first_name': 'Bill'}))}"
     )
     print(
-        f"\nNumber of companies with id: '1234567-7': {len(Company.find({"company_id": "1234567-7"}))}"
+        f"\nNumber of companies with id: '1234567-7': {len(Company.find({'company_id': '1234567-7'}))}"
     )
 
     # Delete everything from the database
@@ -103,10 +103,10 @@ def test_with_default():
 
     # Finding data from DB
     print(
-        f"\nNumber of company owners with first name: 'John': {len(Company.find({"owner.first_name": "John"}))}"
+        f"\nNumber of company owners with first name: 'John': {len(Company.find({'owner.first_name': 'John'}))}"
     )
     print(
-        f"\nNumber of companies with id: '1234567-8': {len(Company.find({"company_id": "1234567-8"}))}"
+        f"\nNumber of companies with id: '1234567-8': {len(Company.find({'company_id': '1234567-8'}))}"
     )
 
     # Delete everything from the database
@@ -219,13 +219,13 @@ def test_with_multiple():
 
     # 3. Finding data
     print(
-        f"\nNumber of company owners with first name: 'Alice': {len(Company.find({"owner.first_name": "Alice"}))}"
+        f"\nNumber of company owners with first name: 'Alice': {len(Company.find({'owner.first_name': 'Alice'}))}"
     )
     print(
-        f"\nNumber of billing companies with id: '1234567-8c': {len(BillingCompany.find({"company_id": "1234567-8c"}))}"
+        f"\nNumber of billing companies with id: '1234567-8c': {len(BillingCompany.find({'company_id': '1234567-8c'}))}"
     )
     print(
-        f"\nNumber of billing accounts with billing_id: 801048: {len(BillingCompany.find({"billing_account.billing_id": 801048}))}"
+        f"\nNumber of billing accounts with billing_id: 801048: {len(BillingCompany.find({'billing_account.billing_id': 801048}))}"
     )
 
     # now delete everything from the DBs:
