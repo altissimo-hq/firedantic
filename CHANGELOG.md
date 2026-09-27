@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-27
+
 ### Changed
 
 - `truncate_collection()` and `delete_all()` delete documents with batched writes
@@ -371,7 +373,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.14.0...HEAD
+[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.15.0...HEAD
+[0.15.0]: https://github.com/altissimo-hq/firedantic/compare/0.14.0...0.15.0
 [0.14.0]: https://github.com/altissimo-hq/firedantic/compare/0.13.2...0.14.0
 [0.13.2]: https://github.com/ioxiocom/firedantic/compare/0.13.1...0.13.2
 [0.13.1]: https://github.com/ioxiocom/firedantic/compare/0.13.0...0.13.1
