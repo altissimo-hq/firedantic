@@ -1,10 +1,13 @@
+import base64
 from operator import attrgetter
 from typing import Dict, List, Optional
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
-from google.api_core.exceptions import AlreadyExists, NotFound
+from google.api_core.exceptions import AlreadyExists, FailedPrecondition, NotFound
 from google.cloud.firestore import Query, async_transactional
+from google.cloud.firestore_admin_v1.types import Index
 from google.cloud.firestore_v1 import DELETE_FIELD, Increment
 from google.cloud.firestore_v1.async_transaction import AsyncTransaction
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -21,6 +24,7 @@ from firedantic.configurations import configuration
 from firedantic.exceptions import (
     CollectionNotDefined,
     InvalidDocumentID,
+    MissingIndexError,
     ModelNotFoundError,
 )
 from firedantic.tests.tests_async.conftest import (
@@ -271,6 +275,36 @@ async def test_find_or_invalid() -> None:
     for filter_ in filters:
         with pytest.raises(ValueError):
             await Product.find(filter_)
+
+
+@pytest.mark.asyncio
+async def test_missing_index_is_reported(monkeypatch) -> None:
+    index = Index(
+        name="projects/p/databases/(default)/collectionGroups/products/indexes/_",
+        query_scope=Index.QueryScope.COLLECTION,
+        fields=[Index.IndexField(field_path="stock", order=Index.IndexField.Order.ASCENDING)],
+    )
+    encoded = base64.b64encode(Index.serialize(index)).decode()
+    error = FailedPrecondition(
+        f"The query requires an index. You can create it here: https://x/?create_composite={encoded}"
+    )
+
+    async def stream(*args, **kwargs):
+        raise error
+        yield  # pragma: no cover
+
+    query = Mock()
+    query.stream = stream
+    query.order_by.return_value = query
+    query.limit.return_value = query
+    query.count.return_value.get = AsyncMock(side_effect=error)
+    monkeypatch.setattr(Product, "_get_query", classmethod(lambda cls, filter_: query))
+
+    with pytest.raises(MissingIndexError) as raised:
+        await Product.find({"stock": 1})
+    assert raised.value.index_json["collectionGroup"] == "products"
+    with pytest.raises(MissingIndexError):
+        await Product.count()
 
 
 @pytest.mark.asyncio

@@ -434,6 +434,34 @@ composite index with collection group scope, with `__discriminator__` as the fir
 if set. When a required index is missing, the error message from Firestore includes a
 link to create it.
 
+## Missing indexes
+
+When Firestore rejects a query because an index is missing, firedantic raises
+`MissingIndexError`. It's a `FailedPrecondition`, like Firestore's own error, and its
+message shows the index to add: as a `__composite_indexes__` declaration where
+firedantic can express it, and as a `firestore.indexes.json` entry. Single-field indexes
+for collection group queries are shown as a `fieldOverrides` entry that keeps
+Firestore's automatic indexes for the field, since an override replaces them.
+
+```text
+Firestore needs an index for this query on collection group 'surveys'.
+Add it to the model's __composite_indexes__:
+    collection_group_index(("status", Query.ASCENDING), ("score", Query.DESCENDING))
+Or add it to "indexes" in firestore.indexes.json:
+    {
+      "collectionGroup": "surveys",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "score", "order": "DESCENDING"}
+      ]
+    }
+Or create it in the Firebase console: https://console.firebase.google.com/...
+```
+
+The error also has the entry as `index_json` and the declaration as `declaration`. The
+Firestore emulator doesn't check indexes, so this only happens against a real database.
+
 ## Composite Indexes and TTL Policies
 
 Firedantic supports defining and automatically creating Composite Indexes and TTL

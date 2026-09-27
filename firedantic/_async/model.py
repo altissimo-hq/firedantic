@@ -48,6 +48,7 @@ from firedantic.exceptions import (
     InvalidDocumentID,
     ModelNotFoundError,
 )
+from firedantic.missing_index import report_missing_index
 
 TAsyncBareModel = TypeVar("TAsyncBareModel", bound="AsyncBareModel")
 TAsyncBareSubModel = TypeVar("TAsyncBareSubModel", bound="AsyncBareSubModel")
@@ -572,14 +573,15 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
             cursor = await cls._get_cursor_snapshot(start_after, transaction)
             query = query.start_after(cursor)  # type: ignore
 
-        return [
-            cls._model_from_data(doc_id, doc_dict)
-            async for doc_id, doc_dict in (
-                (doc.id, doc.to_dict())
-                async for doc in query.stream(transaction=transaction)  # type: ignore
-            )
-            if doc_dict is not None
-        ]
+        with report_missing_index():
+            return [
+                cls._model_from_data(doc_id, doc_dict)
+                async for doc_id, doc_dict in (
+                    (doc.id, doc.to_dict())
+                    async for doc in query.stream(transaction=transaction)  # type: ignore
+                )
+                if doc_dict is not None
+            ]
 
     @classmethod
     async def count(
@@ -670,7 +672,8 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         """
         Runs an aggregation query with a single aggregation and returns its value.
         """
-        results = await aggregation_query.get(transaction=transaction)
+        with report_missing_index():
+            results = await aggregation_query.get(transaction=transaction)
         # Sync stubs type the result as a flat list, but both return one list per query
         return results[0][0].value
 
@@ -688,7 +691,8 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         # empty result apart. Like the average, the count only includes documents
         # that have the field.
         aggregation_query = query.count(alias="count").avg(field, alias="avg")  # type: ignore
-        results = await aggregation_query.get(transaction=transaction)
+        with report_missing_index():
+            results = await aggregation_query.get(transaction=transaction)
         values = {result.alias: result.value for result in results[0]}
         if not values["count"]:
             return None
@@ -784,24 +788,25 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
             first_round = False
 
             fetched = skipped = 0
-            async for doc in page_query.stream(transaction=transaction):  # type: ignore
-                fetched += 1
-                cursor = doc
-                if not path_pattern.match(doc.reference.path):
-                    logger.warning(
-                        "Skipping %s in collection group query for %s: path does not match %s",
-                        doc.reference.path,
-                        cls.__name__,
-                        path_pattern.pattern,
-                    )
-                    skipped += 1
-                    continue
-                data = doc.to_dict()
-                if data is None:
-                    continue
-                model = cls._model_from_data(doc.id, data)
-                model._firedantic_doc_ref = doc.reference  # type: ignore
-                models.append(model)
+            with report_missing_index():
+                async for doc in page_query.stream(transaction=transaction):  # type: ignore
+                    fetched += 1
+                    cursor = doc
+                    if not path_pattern.match(doc.reference.path):
+                        logger.warning(
+                            "Skipping %s in collection group query for %s: path does not match %s",
+                            doc.reference.path,
+                            cls.__name__,
+                            path_pattern.pattern,
+                        )
+                        skipped += 1
+                        continue
+                    data = doc.to_dict()
+                    if data is None:
+                        continue
+                    model = cls._model_from_data(doc.id, data)
+                    model._firedantic_doc_ref = doc.reference  # type: ignore
+                    models.append(model)
 
             # Fetch more only when skipped documents left the page short and the
             # query may still have more results
