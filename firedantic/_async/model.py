@@ -42,6 +42,7 @@ from firedantic.common import (
     is_transform,
     quote_field_names,
     set_path_value,
+    to_firestore_value,
 )
 from firedantic.configurations import configuration
 from firedantic.exceptions import (
@@ -323,7 +324,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
 
         data = self.model_dump(by_alias=True, include=set(fields) or None)
         data.pop(self._get_document_id_key(), None)
-        return quote_field_names(data)
+        return quote_field_names(to_firestore_value(data))
 
     def _prepare_changes(
         self: TAsyncBareModel, changes: Dict[str, Any]
@@ -348,7 +349,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
             # Paths the model doesn't store, e.g. ignored extra fields, are written as given
             if found:
                 data[path] = value
-        return data, updated_model
+        return to_firestore_value(data), updated_model
 
     def _prepare_write(
         self, config_name: Optional[str], exclude_unset: bool, exclude_none: bool
@@ -372,6 +373,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         # The ID is the document name, not part of the data; drop it by the key
         # model_dump() used for it, which is its alias if it has one
         data.pop(self._get_document_id_key(), None)
+        data = to_firestore_value(data)
 
         async_client = configuration.get_async_client(resolved)
         if async_client is None:
@@ -1073,8 +1075,11 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
                     raise ValueError(
                         f"Unsupported filter type: {f_type}. Supported types are: {', '.join(FIND_TYPES)}"
                     )
-            return [FieldFilter(field, f_type, f_value) for f_type, f_value in value.items()]
-        return [FieldFilter(field, "==", value)]
+            return [
+                FieldFilter(field, f_type, to_firestore_value(f_value))
+                for f_type, f_value in value.items()
+            ]
+        return [FieldFilter(field, "==", to_firestore_value(value))]
 
     @classmethod
     async def find_one(

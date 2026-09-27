@@ -39,6 +39,7 @@ from firedantic.common import (
     collection_group_field_index,
     collection_group_index,
     collection_index,
+    to_firestore_value,
 )
 from firedantic.configurations import (
     CONFIGURATIONS,

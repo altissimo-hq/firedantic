@@ -1,16 +1,19 @@
 import base64
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+from enum import Enum
 from operator import attrgetter
 from typing import Dict, List, Optional
 from unittest.mock import AsyncMock, Mock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from google.api_core.exceptions import AlreadyExists, FailedPrecondition, NotFound
 from google.cloud.firestore import Query, async_transactional
 from google.cloud.firestore_admin_v1.types import Index
-from google.cloud.firestore_v1 import DELETE_FIELD, Increment
+from google.cloud.firestore_v1 import DELETE_FIELD, ArrayUnion, Increment
 from google.cloud.firestore_v1.async_transaction import AsyncTransaction
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError, field_serializer
 
 import firedantic.operators as op
 from firedantic import (
@@ -305,6 +308,136 @@ async def test_missing_index_is_reported(monkeypatch) -> None:
     assert raised.value.index_json["collectionGroup"] == "products"
     with pytest.raises(MissingIndexError):
         await Product.count()
+
+
+class Format(Enum):
+    VIRTUAL = "virtual"
+    IN_PERSON = "in_person"
+
+
+class Venue(BaseModel):
+    url: HttpUrl
+    opened: date
+
+
+class Event(AsyncModel):
+    __collection__ = "events"
+
+    url: HttpUrl
+    day: date
+    budget: Decimal
+    format: Format
+    uid: UUID
+    duration: timedelta
+    venue: Venue
+    days: List[date] = []
+    lines: Dict[str, Decimal] = {}
+
+
+def make_event(**changes) -> Event:
+    data = {
+        "url": "https://example.com/event",
+        "day": date(2026, 10, 1),
+        "budget": Decimal("12.50"),
+        "format": Format.VIRTUAL,
+        "uid": UUID(int=1),
+        "duration": timedelta(minutes=45),
+        "venue": Venue(url=HttpUrl("https://example.com/venue"), opened=date(2020, 1, 2)),
+        "days": [date(2026, 10, 1), date(2026, 10, 2)],
+        "lines": {"food": Decimal("7.25")},
+    }
+    return Event(**{**data, **changes})
+
+
+@pytest.mark.asyncio
+async def test_save_pydantic_types() -> None:
+    event = make_event()
+    await event.save()
+    assert event.id
+
+    assert await get_stored_data(event) == {
+        "url": "https://example.com/event",
+        "day": "2026-10-01",
+        "budget": "12.50",
+        "format": "virtual",
+        "uid": "00000000-0000-0000-0000-000000000001",
+        "duration": 2700.0,
+        "venue": {"url": "https://example.com/venue", "opened": "2020-01-02"},
+        "days": ["2026-10-01", "2026-10-02"],
+        "lines": {"food": "7.25"},
+    }
+    assert await Event.get_by_id(event.id) == event
+
+    created = make_event()
+    await created.create()
+    batch = get_async_batch()
+    batched = make_event()
+    await batched.save(batch=batch)
+    await batch.commit()
+    assert batched.id and created.id
+    assert await Event.get_by_ids([created.id, batched.id]) == [created, batched]
+
+
+@pytest.mark.asyncio
+async def test_update_pydantic_types() -> None:
+    event = make_event()
+    await event.save()
+    assert event.id
+
+    event.day = date(2026, 11, 5)
+    await event.update("day")
+    await event.update({"budget": Decimal("3.10"), "venue.opened": date(2021, 5, 6)})
+    await event.update({"days": ArrayUnion([date(2026, 12, 24)]), "format": Format.IN_PERSON})
+
+    stored = await get_stored_data(event)
+    assert stored is not None
+    assert stored["day"] == "2026-11-05"
+    assert stored["budget"] == "3.10"
+    assert stored["venue"]["opened"] == "2021-05-06"
+    assert stored["days"] == ["2026-10-01", "2026-10-02", "2026-12-24"]
+    assert stored["format"] == "in_person"
+    assert event.venue.opened == date(2021, 5, 6)
+    await event.reload()
+    assert event.days[-1] == date(2026, 12, 24)
+
+
+@pytest.mark.asyncio
+async def test_filter_pydantic_types() -> None:
+    early = make_event(day=date(2026, 9, 1), duration=timedelta(minutes=30))
+    late = make_event(day=date(2026, 10, 1), format=Format.IN_PERSON)
+    await early.save()
+    await late.save()
+
+    async def find_days(filter_: Dict) -> List[date]:
+        return sorted(e.day for e in await Event.find(filter_))
+
+    assert await find_days({"day": {op.GTE: date(2026, 9, 15)}}) == [late.day]
+    assert await find_days({"format": Format.VIRTUAL}) == [early.day]
+    assert await find_days({"format": {op.IN: [Format.IN_PERSON]}}) == [late.day]
+    assert await find_days({"duration": {op.GT: timedelta(minutes=40)}}) == [late.day]
+    assert await find_days({"days": {op.ARRAY_CONTAINS: date(2026, 10, 2)}}) == [early.day, late.day]
+    assert await find_days({"budget": Decimal("12.50")}) == [early.day, late.day]
+    assert await find_days({op.OR: [{"format": Format.IN_PERSON}, {"uid": UUID(int=2)}]}) == [late.day]
+    assert await Event.count({"day": {op.LT: date(2026, 9, 15)}}) == 1
+
+
+class TimestampEvent(AsyncModel):
+    __collection__ = "timestamp_events"
+    day: date
+
+    @field_serializer("day")
+    def serialize_day(self, day: date) -> datetime:
+        return datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_field_serializer_takes_priority() -> None:
+    event = TimestampEvent(day=date(2026, 10, 1))
+    await event.save()
+    stored = await get_stored_data(event)
+    assert stored is not None
+    assert stored["day"] == datetime(2026, 10, 1, tzinfo=timezone.utc)
+    assert (await TimestampEvent.get_by_id(event.id)).day == date(2026, 10, 1)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio

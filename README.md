@@ -256,6 +256,42 @@ passed through as they are. Only `Increment` is applied to the instance, so use
 `reload()` to see the result of the others. In a transaction the instance is left
 unchanged, since the write only happens when the transaction commits.
 
+#### Stored values
+
+Firestore stores strings, numbers, booleans, bytes, datetimes, maps, arrays, geo points,
+document references and vectors. firedantic converts other values when it writes a model
+and in filter values, so pydantic types work as fields:
+
+| Type                    | Stored as                                           |
+| ----------------------- | --------------------------------------------------- |
+| `Enum`                  | its value                                           |
+| `date`                  | ISO string, e.g. `"2026-10-01"`, which sorts        |
+| `Decimal`               | exact string, e.g. `"12.50"`                        |
+| `timedelta`             | total seconds, e.g. `2700.0`                        |
+| `UUID`, `HttpUrl`, etc. | pydantic's JSON form, e.g. `"https://example.com/"` |
+
+They all read back into the model. `Decimal` strings don't sort as numbers, so range
+filters and ordering on a `Decimal` field don't work. Store money as integer cents, or
+use a `field_serializer`, if you need those. A `field_serializer` or `PlainSerializer`
+on a field decides how it's stored, since it runs before the conversion:
+
+```python
+from datetime import date, datetime, timezone
+from pydantic import field_serializer
+
+class Event(Model):
+    __collection__ = "events"
+    day: date
+
+    @field_serializer("day")
+    def store_day_as_timestamp(self, day: date) -> datetime:
+        return datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+```
+
+Filter values get the default conversion, so filters on such a field need the stored
+form, e.g. `Event.find({"day": datetime(2026, 10, 1, tzinfo=timezone.utc)})`.
+`to_firestore_value()` does the conversion, for code that queries Firestore directly.
+
 ### Async Usage
 
 Firedantic can also be used in an async way, like this:
