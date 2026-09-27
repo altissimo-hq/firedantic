@@ -266,15 +266,21 @@ def test_get_collection_group_id() -> None:
     assert Renamed.get_collection_group_id() == "stuff"
 
 
-
 def test_invalid_discriminator() -> None:
-    class Broken(Model):
-        __collection__ = "broken"
-        __discriminator__ = "kind"
-        kind: str
+    with pytest.raises(ValueError, match="must name a field with a default value"):
 
-    with pytest.raises(ValueError):
-        Broken.find_in_group()
+        class NoDefault(Model):
+            __collection__ = "broken"
+            __discriminator__ = "kind"
+            kind: str
+
+    with pytest.raises(ValueError, match="must name a field with a default value"):
+
+        class NoField(SubModel):
+            __discriminator__ = "kind"
+
+            class Collection(SubCollection):
+                __collection_tpl__ = "animals/{id}/broken"
 
 
 

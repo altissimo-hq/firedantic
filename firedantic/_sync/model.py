@@ -116,6 +116,12 @@ class BareModel(pydantic.BaseModel, ABC):
     # reloaded and deleted without knowing their parent document.
     _firedantic_doc_ref: Optional[DocumentReference] = PrivateAttr(default=None)
 
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        # Fail at import time instead of on the first collection group query
+        cls._get_discriminator_filter()
+
     def save(
         self,
         *,

@@ -238,7 +238,8 @@ Firedantic limits the query to documents below the model's top-level collection
 match the collection template, such as `animals/*/visits/*/surveys`. That check runs
 after `limit` is applied, so to get full pages, also set `__discriminator__` to a field
 whose default value identifies the model. It is added to the query as an equality
-filter.
+filter. If the field doesn't exist or has no default, defining the model raises a
+`ValueError`.
 
 ```python
 from typing import Literal, Optional

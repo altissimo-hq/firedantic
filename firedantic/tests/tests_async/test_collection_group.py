@@ -266,15 +266,21 @@ def test_get_collection_group_id() -> None:
     assert Renamed.get_collection_group_id() == "stuff"
 
 
-@pytest.mark.asyncio
-async def test_invalid_discriminator() -> None:
-    class Broken(AsyncModel):
-        __collection__ = "broken"
-        __discriminator__ = "kind"
-        kind: str
+def test_invalid_discriminator() -> None:
+    with pytest.raises(ValueError, match="must name a field with a default value"):
 
-    with pytest.raises(ValueError):
-        await Broken.find_in_group()
+        class NoDefault(AsyncModel):
+            __collection__ = "broken"
+            __discriminator__ = "kind"
+            kind: str
+
+    with pytest.raises(ValueError, match="must name a field with a default value"):
+
+        class NoField(AsyncSubModel):
+            __discriminator__ = "kind"
+
+            class Collection(AsyncSubCollection):
+                __collection_tpl__ = "animals/{id}/broken"
 
 
 @pytest.mark.asyncio
