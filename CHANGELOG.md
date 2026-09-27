@@ -7,6 +7,24 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Added collection group queries with `find_in_group()` and `find_one_in_group()`,
+  including cursor pagination with `start_after`.
+- Added `__discriminator__` to filter collection group queries by a field's default
+  value, and `__collection_group__` to override the collection group ID.
+- Added `get_document_path()` to models and `get_parent_id()` to sub-models.
+
+### Fixed
+
+- Fixed `set_up_composite_indexes` using the whole collection path instead of the
+  collection group ID for sub-models.
+- Fixed `set_up_ttl_policies` raising `CollectionNotDefined` for sub-models; it now uses
+  the collection group ID like composite indexes do.
+- `model_for()` now validates the values substituted into `__collection_tpl__` and
+  raises `InvalidDocumentID` if one is `None` or not a valid document ID, e.g. contains
+  a `/`, which would have pointed the model at a different document's subcollection.
+
 ## [0.13.2] - 2026-05-06
 
 ### Fixed

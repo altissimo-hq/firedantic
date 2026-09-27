@@ -223,6 +223,88 @@ async def get_user_purchases(user_id: str, period: str = "2021") -> int:
 
 ```
 
+## Collection group queries
+
+A
+[collection group query](https://firebase.google.com/docs/firestore/query-data/queries#collection-group-query)
+searches every collection with the same ID, for example the `surveys` subcollection of
+every animal. Any model can run one with `find_in_group()` and `find_one_in_group()`,
+which take the same arguments as `find()` and `find_one()`.
+
+Firestore matches collections by their last path segment only, so `animals/*/surveys`,
+`sites/*/surveys` and a top-level `surveys` collection are all in the same group.
+Firedantic limits the query to documents below the model's top-level collection
+(including the configured prefix), and skips any remaining documents whose path doesn't
+match the collection template, such as `animals/*/visits/*/surveys`. When documents are
+skipped, more are fetched to fill the page, so a page shorter than `limit` always means
+there are no more results.
+
+To avoid reading documents that are then skipped, set `__discriminator__` to a field
+whose default value identifies the model. It is added to the query as an equality
+filter. If the field doesn't exist or has no default, defining the model raises a
+`ValueError`.
+
+```python
+from typing import Literal, Optional
+from firedantic import AsyncModel, AsyncSubCollection, AsyncSubModel
+
+class Animal(AsyncModel):
+    __collection__ = "animals"
+    name: str
+
+class AnimalSurvey(AsyncSubModel):
+    __discriminator__ = "kind"
+
+    id: Optional[str] = None
+    kind: Literal["animal_survey"] = "animal_survey"
+    status: str
+
+    class Collection(AsyncSubCollection):
+        __collection_tpl__ = "animals/{id}/surveys"
+
+async def close_open_surveys() -> None:
+    # Open surveys of every animal
+    surveys = await AnimalSurvey.find_in_group({"status": "open"})
+    for survey in surveys:
+        print(survey.get_parent_id(), survey.get_document_path())
+        # The models remember where they were loaded from, so this saves them back
+        # under the right animal
+        survey.status = "closed"
+        await survey.save()
+```
+
+The collection group ID is the last segment of the collection path (`surveys` above).
+Set `__collection_group__` on the model to override it.
+
+### Pagination
+
+Pass the last model of the previous page as `start_after` to get the next page. Its
+`get_document_path()` works too, for example when the cursor goes through an API:
+
+```python
+from google.cloud.firestore import Query
+
+page = await AnimalSurvey.find_in_group(order_by=[("status", Query.ASCENDING)], limit=20)
+next_page = await AnimalSurvey.find_in_group(
+    order_by=[("status", Query.ASCENDING)], limit=20, start_after=page[-1]
+)
+```
+
+`offset` is supported as well, but Firestore bills for every document it skips, and the
+offset also counts documents skipped by the path check.
+
+### Indexes
+
+Collection group queries need indexes with collection group scope, which can be defined
+with `collection_group_index(...)` as described below. Filtering on a single field also
+needs a single-field index with collection group scope, which Firestore doesn't create
+automatically. Because the path restriction is a range filter on the document name,
+Firestore can't combine single-field indexes for these queries: every filter or sort
+shape used with `find_in_group()`, including plain equality filters, needs its own
+composite index with collection group scope, with `__discriminator__` as the first field
+if set. When a required index is missing, the error message from Firestore includes a
+link to create it.
+
 ## Composite Indexes and TTL Policies
 
 Firedantic supports defining and automatically creating Composite Indexes and TTL

@@ -109,8 +109,8 @@ async def set_up_composite_indexes(
         # If caller did not pass gcloud_project, try to get it from config
         project = gcloud_project or configuration.get_config(config_name).project
 
-        # Build collection group path using configuration helper (includes prefix)
-        collection_group = configuration.get_collection_name(model, config_name=config_name)
+        # For sub-models this is the last segment of the collection template
+        collection_group = model.get_collection_group_id()
         path = f"projects/{project}/databases/{database}/collectionGroups/{collection_group}"
 
         indexes_in_db = await get_existing_indexes(client, path=path)
