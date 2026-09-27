@@ -171,6 +171,34 @@ async def test_find_in_group_without_discriminator() -> None:
     assert sorted(s.score for s in surveys) == [10, 11, 12, 20, 21, 22]
 
 
+
+@pytest.mark.asyncio
+async def test_count_in_group() -> None:
+    assert await AnimalSurvey.count_in_group() == 0
+
+    await _create_surveys()
+
+    assert await AnimalSurvey.count_in_group() == 6
+    assert await AnimalSurvey.count_in_group({"score": {">=": 12}}) == 4
+    assert await AnimalSurvey.count_in_group({"status": "closed"}) == 0
+    # Surveys under sites/ and the top-level surveys are outside animals/
+    assert await UndiscriminatedAnimalSurvey.count_in_group() == 6
+    assert await SiteSurvey.count_in_group() == 1
+    assert await Survey.count_in_group() == 1
+
+
+@pytest.mark.asyncio
+async def test_count_in_group_includes_mismatched_paths() -> None:
+    await _create_surveys()
+    animal = (await Animal.find())[0]
+    nested = animal._get_doc_ref().collection("visits").document("v").collection("surveys")
+    await nested.document("nested").set({"kind": "animal_survey", "score": 999})
+    await nested.document("other").set({"kind": "other", "score": 999})
+
+    # Unlike find_in_group(), the count can't check paths, only the discriminator
+    assert len(await AnimalSurvey.find_in_group()) == 6
+    assert await AnimalSurvey.count_in_group() == 7
+
 @pytest.mark.asyncio
 async def test_find_in_group_pagination() -> None:
     await _create_surveys()

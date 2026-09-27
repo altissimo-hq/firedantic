@@ -420,27 +420,13 @@ class BareModel(pydantic.BaseModel, ABC):
         :param transaction: Optional transaction to use.
         :return: List of found models.
         """
-        client = configuration.get_client(cls.__db_config__)
-        query: BaseQuery = client.collection_group(cls.get_collection_group_id())
-
-        discriminator = cls._get_discriminator_filter()
-        if discriminator is not None:
-            query = cls._add_filter(query, *discriminator)  # type: ignore
-        if filter_:
-            for key, value in filter_.items():
-                query = cls._add_filter(query, key, value)  # type: ignore
+        query = cls._get_group_query(filter_)
 
         if order_by is not None:
             for field, direction in order_by:
                 query = query.order_by(field, direction=direction)  # type: ignore
 
-        path_range = cls._get_collection_group_path_range()
-        if path_range is not None:
-            # Only search below the model's top-level collection (with its prefix), so
-            # same-named subcollections elsewhere don't use up the limit
-            lower, upper = (client.document(*bound) for bound in path_range)
-            query = query.where(filter=FieldFilter(DOCUMENT_ID, ">=", lower))
-            query = query.where(filter=FieldFilter(DOCUMENT_ID, "<", upper))
+        if cls._get_collection_group_path_range() is not None:
             # The Firestore client adds the implicit orderings for cursors itself, but
             # adds __name__ once per filter on it, which the server rejects
             ordered = {field for field, _ in order_by or []}
@@ -492,6 +478,56 @@ class BareModel(pydantic.BaseModel, ABC):
             # query may still have more results
             if requested is None or skipped == 0 or fetched < requested:
                 return models
+
+    @classmethod
+    def count_in_group(
+        cls,
+        filter_: Optional[Dict[str, Any]] = None,
+        transaction: Optional[Transaction] = None,
+    ) -> int:
+        """
+        Returns the number of models matching a filter in the model's collection group,
+        using a count aggregation query, so the documents themselves are not read.
+
+        Counts the same documents as `find_in_group()`, except that the count can't
+        check document paths, so it includes documents that `find_in_group()` would
+        skip for not matching the collection template, such as
+        "animals/abc/visits/xyz/surveys/...". Use `__discriminator__` to exclude them.
+
+        Example: `AnimalSurvey.count_in_group({"status": "open"})`.
+
+        :param filter_: The filter criteria.
+        :param transaction: Optional transaction to use.
+        :return: Number of matching models.
+        """
+        query = cls._get_group_query(filter_)
+        results = query.count().get(transaction=transaction)  # type: ignore
+        return int(results[0][0].value)  # type: ignore[index]
+
+    @classmethod
+    def _get_group_query(cls, filter_: Optional[Dict[str, Any]]) -> BaseQuery:
+        """
+        Returns the collection group query for the model, with the discriminator,
+        `filter_` and the bounds of the model's top-level collection applied.
+        """
+        client = configuration.get_client(cls.__db_config__)
+        query: BaseQuery = client.collection_group(cls.get_collection_group_id())
+
+        discriminator = cls._get_discriminator_filter()
+        if discriminator is not None:
+            query = cls._add_filter(query, *discriminator)  # type: ignore
+        if filter_:
+            for key, value in filter_.items():
+                query = cls._add_filter(query, key, value)  # type: ignore
+
+        path_range = cls._get_collection_group_path_range()
+        if path_range is not None:
+            # Only search below the model's top-level collection (with its prefix), so
+            # same-named subcollections elsewhere don't use up the limit or the count
+            lower, upper = (client.document(*bound) for bound in path_range)
+            query = query.where(filter=FieldFilter(DOCUMENT_ID, ">=", lower))
+            query = query.where(filter=FieldFilter(DOCUMENT_ID, "<", upper))
+        return query
 
     @classmethod
     def find_one_in_group(
