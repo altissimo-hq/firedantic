@@ -9,6 +9,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Added a `start_after` cursor to `find()` for paging through results, like the one in
+  `find_in_group()`. It takes a model from the previous page, its document ID or path,
+  or a document snapshot.
+
+### Added
+
 - Added `sum()` and `avg()` to models, which sum and average a numeric field of the
   matching documents with an aggregation query, and `sum_in_group()` and
   `avg_in_group()` for the model's collection group. The average is `None` if no

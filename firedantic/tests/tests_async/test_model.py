@@ -176,6 +176,51 @@ async def test_sum_and_avg_in_transaction(create_product) -> None:
 
 
 @pytest.mark.asyncio
+async def test_find_pagination(create_product) -> None:
+    for p in TEST_PRODUCTS:
+        await create_product(**p)
+    order_by = [("stock", Query.ASCENDING)]
+
+    page_1 = await Product.find(order_by=order_by, limit=2)
+    page_2 = await Product.find(order_by=order_by, limit=2, start_after=page_1[-1])
+    # The document ID or path works as a cursor too, e.g. when passed through an API
+    page_2_by_id = await Product.find(order_by=order_by, limit=2, start_after=page_1[-1].id)
+    page_2_by_path = await Product.find(
+        order_by=order_by, limit=2, start_after=page_1[-1].get_document_path()
+    )
+    page_3 = await Product.find(order_by=order_by, limit=2, start_after=page_2[-1])
+
+    assert [p.product_id for p in page_1] == ["a", "b"]
+    assert [p.product_id for p in page_2] == ["c", "d"]
+    assert page_2_by_id == page_2
+    assert page_2_by_path == page_2
+    assert page_3 == []
+
+
+@pytest.mark.asyncio
+async def test_find_pagination_with_filter_and_ties(create_product) -> None:
+    for _ in range(5):
+        await create_product(stock=1)
+    await create_product(stock=0)
+
+    # Without order_by the pages are ordered by the inequality field and document ID
+    found = []
+    page = await Product.find({"stock": {op.GTE: 1}}, limit=2)
+    while page:
+        found.extend(page)
+        page = await Product.find({"stock": {op.GTE: 1}}, limit=2, start_after=page[-1])
+
+    assert len(found) == 5
+    assert len({p.id for p in found}) == 5
+
+
+@pytest.mark.asyncio
+async def test_find_pagination_missing_cursor() -> None:
+    with pytest.raises(ModelNotFoundError):
+        await Product.find(start_after="missing")
+
+
+@pytest.mark.asyncio
 async def test_get_by_ids(create_company) -> None:
     company_a = await create_company(company_id="1234555-1")
     company_b = await create_company(company_id="1231231-2")

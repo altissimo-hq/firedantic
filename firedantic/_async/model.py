@@ -471,6 +471,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         order_by: Optional[_OrderBy] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
+        start_after: Union["AsyncBareModel", str, DocumentSnapshot, None] = None,
         transaction: Optional[AsyncTransaction] = None,
     ) -> List[TAsyncBareModel]:
         """
@@ -482,18 +483,18 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         Example: `Product.find({"stock": {">=": 1}})`.
         Example: `Product.find(order_by=[('unit_value', Query.ASCENDING), ('stock', Query.DESCENDING)], limit=2)`.
         Example: `Product.find({"stock": {">=": 3}}, order_by=[('unit_value', Query.ASCENDING)], limit=2, offset=3)`.
+        Example: `Product.find(order_by=[('stock', Query.ASCENDING)], limit=20, start_after=previous_page[-1])`.
 
         :param filter_: The filter criteria.
         :param order_by: List of columns and direction to order results by.
         :param limit: Maximum results to return.
         :param offset: Skip the first n results.
+        :param start_after: Cursor to continue from: a model returned by a previous
+            call, its document ID or `get_document_path()`, or a document snapshot.
         :param transaction: Optional transaction to use.
         :return: List of found models.
         """
-        query: Union[AsyncQuery, AsyncCollectionReference] = cls._get_col_ref()
-        if filter_:
-            for key, value in filter_.items():
-                query = cls._add_filter(query, key, value)
+        query = cls._get_query(filter_)
 
         if order_by is not None:
             for field, direction in order_by:
@@ -502,6 +503,11 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
             query = query.limit(limit)  # type: ignore
         if offset is not None:
             query = query.offset(offset)  # type: ignore
+        if start_after is not None:
+            if isinstance(start_after, str) and "/" not in start_after:
+                start_after = cls._get_col_ref().document(start_after).path
+            cursor = await cls._get_cursor_snapshot(start_after, transaction)
+            query = query.start_after(cursor)  # type: ignore
 
         return [
             cls._model_from_data(doc_id, doc_dict)
