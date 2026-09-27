@@ -172,6 +172,34 @@ def test_find_in_group_without_discriminator() -> None:
 
 
 
+
+def test_count_in_group() -> None:
+    assert AnimalSurvey.count_in_group() == 0
+
+    _create_surveys()
+
+    assert AnimalSurvey.count_in_group() == 6
+    assert AnimalSurvey.count_in_group({"score": {">=": 12}}) == 4
+    assert AnimalSurvey.count_in_group({"status": "closed"}) == 0
+    # Surveys under sites/ and the top-level surveys are outside animals/
+    assert UndiscriminatedAnimalSurvey.count_in_group() == 6
+    assert SiteSurvey.count_in_group() == 1
+    assert Survey.count_in_group() == 1
+
+
+
+def test_count_in_group_includes_mismatched_paths() -> None:
+    _create_surveys()
+    animal = (Animal.find())[0]
+    nested = animal._get_doc_ref().collection("visits").document("v").collection("surveys")
+    nested.document("nested").set({"kind": "animal_survey", "score": 999})
+    nested.document("other").set({"kind": "other", "score": 999})
+
+    # Unlike find_in_group(), the count can't check paths, only the discriminator
+    assert len(AnimalSurvey.find_in_group()) == 6
+    assert AnimalSurvey.count_in_group() == 7
+
+
 def test_find_in_group_pagination() -> None:
     _create_surveys()
     order_by = [("score", Query.ASCENDING)]

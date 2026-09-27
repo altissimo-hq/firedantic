@@ -17,6 +17,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Added `increment()` to models, which atomically increments a numeric field and applies
   the same change to the model instance. It accepts nested field paths and aliases.
   Based on upstream ioxiocom/firedantic#95.
+- Added `count_in_group()` to models, which counts matching documents in the model's
+  collection group with a count aggregation query. Unlike `find_in_group()`, it can't
+  skip documents whose path doesn't match the collection template.
 - Added a `py.typed` marker so type checkers use firedantic's type hints (PEP 561).
 
 ### Fixed

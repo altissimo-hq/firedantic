@@ -305,6 +305,15 @@ async def close_open_surveys() -> None:
 The collection group ID is the last segment of the collection path (`surveys` above).
 Set `__collection_group__` on the model to override it.
 
+`count_in_group()` counts the matching documents of the group with a count aggregation
+query, without reading them. It can't check document paths, so it also counts documents
+that `find_in_group()` would skip, like `animals/*/visits/*/surveys`, unless the
+`__discriminator__` excludes them.
+
+```python
+open_surveys = await AnimalSurvey.count_in_group({"status": "open"})
+```
+
 ### Pagination
 
 Pass the last model of the previous page as `start_after` to get the next page. Its
