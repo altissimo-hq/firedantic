@@ -4,6 +4,8 @@ from typing import List, Literal, Optional
 import pytest
 from google.cloud.firestore import Query
 
+import firedantic.operators as op
+
 from firedantic import (
     Model,
     SubCollection,
@@ -215,6 +217,21 @@ def test_count_in_group_includes_mismatched_paths() -> None:
     # Unlike find_in_group(), the count can't check paths, only the discriminator
     assert len(AnimalSurvey.find_in_group()) == 6
     assert AnimalSurvey.count_in_group() == 7
+
+
+def test_find_in_group_or() -> None:
+    _create_surveys()
+    filter_ = {op.OR: [{"score": 10}, {"score": {op.GTE: 21}}]}
+
+    surveys = AnimalSurvey.find_in_group(filter_, order_by=[("score", Query.ASCENDING)])
+    assert [s.score for s in surveys] == [10, 21, 22]
+    assert AnimalSurvey.count_in_group(filter_) == 3
+
+    # Paging orders by the inequality field inside the OR
+    page_1 = AnimalSurvey.find_in_group(filter_, limit=2)
+    page_2 = AnimalSurvey.find_in_group(filter_, limit=2, start_after=page_1[-1])
+    assert sorted(s.score for s in page_1 + page_2) == [10, 21, 22]
+
 
 
 def test_find_in_group_pagination() -> None:

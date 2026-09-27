@@ -152,6 +152,15 @@ Product.find({"stock": {op.GTE: 3}})
 Product.find({"stock": {">=": 1}}, order_by=[('unit_value', Query.ASCENDING)], limit=25, offset=50)
 Product.find(order_by=[('unit_value', Query.ASCENDING), ('stock', Query.DESCENDING)], limit=2)
 
+# OR filters take a list of filter dicts, and nest with op.AND
+Product.find({op.OR: [{"stock": 0}, {"unit_value": {op.GTE: 100}}]})
+Product.find(
+    {
+        "product_id": {op.IN: ["abc-123", "def-456"]},
+        op.OR: [{"stock": 0}, {op.AND: [{"stock": {op.GTE: 10}}, {"unit_value": 5}]}],
+    }
+)
+
 # Count matching documents without reading them
 Product.count()
 Product.count({"stock": {op.GTE: 3}})
@@ -179,6 +188,13 @@ nested fields. Values that aren't numbers are ignored. The sum of no values is 0
 the average is `None` if no matching document has the field. If the field exists but has
 no numbers, the average is 0.0, because the Firestore client library reads Firestore's
 null result as 0.0.
+
+The keys of a filter dict are combined with AND. `op.OR` (`"$or"`) and `op.AND`
+(`"$and"`) take a list of filter dicts, whose keys are also combined with AND, and can
+be nested. Firestore's
+[limits on OR queries](https://firebase.google.com/docs/firestore/query-data/queries#limits_on_or_queries)
+apply. OR filters work in all methods that take a filter, including `count()`, `sum()`,
+`avg()` and the collection group methods.
 
 The query operators are found at
 [https://firebase.google.com/docs/firestore/query-data/queries#query_operators](https://firebase.google.com/docs/firestore/query-data/queries#query_operators).
