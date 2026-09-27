@@ -34,17 +34,38 @@ class TestWatcher:
             print("Tests failed. Check output for details.")
 
 
+REPO_LINK = "https://github.com/altissimo-hq/firedantic"
+
+
 @task
 def release(ctx):
+    """
+    Tag the version in pyproject.toml and push the tag. Only runs from a clean
+    checkout of main that matches origin/main, so the tag can't point at local-only
+    or unmerged commits.
+    """
     toml = Path("pyproject.toml").read_text()
     match = re.search(r'version = "(.*?)"', toml)
-    if match:
-        version = match.group(1)
-        print(f"Releasing {version}")
-        ctx.run(f"git tag {version}", echo=True)
-        ctx.run(f"git push origin {version}", echo=True)
-    else:
-        print("Failed to find version in the pyproject.toml")
+    if not match:
+        raise Exit("Failed to find version in the pyproject.toml")
+    version = match.group(1)
+
+    branch = ctx.run("git rev-parse --abbrev-ref HEAD", hide=True).stdout.strip()
+    if branch != "main":
+        raise Exit(f"Releases are tagged from main, not '{branch}'")
+    if ctx.run("git status --porcelain", hide=True).stdout.strip():
+        raise Exit("Working tree is not clean")
+    ctx.run("git fetch origin main", hide=True)
+    local = ctx.run("git rev-parse HEAD", hide=True).stdout.strip()
+    remote = ctx.run("git rev-parse origin/main", hide=True).stdout.strip()
+    if local != remote:
+        raise Exit("Local main differs from origin/main; pull or push first")
+    if ctx.run(f"git tag --list {version}", hide=True).stdout.strip():
+        raise Exit(f"Tag {version} already exists")
+
+    print(f"Releasing {version} from {local[:7]}")
+    ctx.run(f"git tag {version}", echo=True)
+    ctx.run(f"git push origin {version}", echo=True)
 
 
 def run_test_cmd(ctx, cmd, env=None) -> int:
@@ -146,10 +167,9 @@ def make_changelog(ctx):
     """
     new_changelog = changelog.replace("## [Unreleased]", dedent(changes).strip())
 
-    repo_link = "https://github.com/ioxiocom/firedantic"
     links = f"""
-    [unreleased]: {repo_link}/compare/{version}...HEAD
-    [{version}]: {repo_link}/compare/{old_version}...{version}
+    [unreleased]: {REPO_LINK}/compare/{version}...HEAD
+    [{version}]: {REPO_LINK}/compare/{old_version}...{version}
     """
     new_changelog = re.sub(r"\[unreleased]:.*?HEAD", dedent(links).strip(), new_changelog)
 
