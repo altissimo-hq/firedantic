@@ -19,6 +19,14 @@ class CollectionNotDefined(ModelError):
     """Raised when the model collection is not defined."""
 
 
+class DocumentChangedError(FailedPrecondition):
+    """
+    Raised when an `update()` or `delete()` with `if_unchanged=True` fails because the
+    stored document was changed or deleted after the model was loaded or written.
+    Reload the model to see the stored version.
+    """
+
+
 class MissingIndexError(FailedPrecondition):
     """
     Raised when Firestore rejects a query because an index it needs is missing.

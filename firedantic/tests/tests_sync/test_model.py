@@ -27,6 +27,7 @@ from firedantic import (
 from firedantic.configurations import configuration
 from firedantic.exceptions import (
     CollectionNotDefined,
+    DocumentChangedError,
     InvalidDocumentID,
     MissingIndexError,
     ModelNotFoundError,
@@ -938,6 +939,107 @@ def test_batch_and_transaction() -> None:
     product = Product(product_id="p", price=1.0, stock=1)
     with pytest.raises(ValueError):
         product.save(transaction=get_transaction(), batch=get_batch())
+
+
+
+def test_update_time_is_tracked(create_product) -> None:
+    product = Product(product_id="p", price=1.0, stock=1)
+    assert product.get_update_time() is None
+    product.save()
+    saved = product.get_update_time()
+    assert saved is not None
+    assert product.id
+
+    # Loaded models know it too, and it doesn't affect comparing models
+    loaded = Product.get_by_id(product.id)
+    assert loaded.get_update_time() == saved
+    assert (Product.find())[0].get_update_time() == saved
+    assert [p for p in Product.stream()][0].get_update_time() == saved
+    assert (Product.get_by_ids([product.id]))[0].get_update_time() == saved
+    assert Product(id=product.id, product_id="p", price=1.0, stock=1) == loaded
+
+    product.increment("stock")
+    assert product.get_update_time() > saved  # type: ignore[operator]
+    loaded.reload()
+    assert loaded.get_update_time() == product.get_update_time()
+
+    # A write in a batch makes it unknown until the model is loaded again
+    batch = get_batch()
+    product.save(batch=batch)
+    batch.commit()
+    assert product.get_update_time() is None
+
+
+
+def test_update_if_unchanged() -> None:
+    product = Product(product_id="p", price=1.0, stock=1)
+    product.save()
+    assert product.id
+    other = Product.get_by_id(product.id)
+
+    # Writes through the same model keep its update time current
+    product.stock = 2
+    product.update("stock", if_unchanged=True)
+    product.update({"price": 3.0}, if_unchanged=True)
+
+    # The other copy is now stale
+    other.stock = 10
+    with pytest.raises(DocumentChangedError):
+        other.update(if_unchanged=True)
+    stored = Product.get_by_id(product.id)
+    assert (stored.price, stored.stock) == (3.0, 2)
+
+    other.reload()
+    other.stock = 10
+    other.update(if_unchanged=True)
+    assert (Product.get_by_id(product.id)).stock == 10
+
+
+
+def test_delete_if_unchanged() -> None:
+    product = Product(product_id="p", price=1.0, stock=1)
+    product.save()
+    assert product.id
+    other = Product.get_by_id(product.id)
+    product.increment("stock")
+
+    with pytest.raises(DocumentChangedError):
+        other.delete(if_unchanged=True)
+    assert Product.count() == 1
+
+    product.delete(if_unchanged=True)
+    assert Product.count() == 0
+    # Changing a deleted document fails too
+    with pytest.raises(DocumentChangedError):
+        other.update(if_unchanged=True)
+
+
+
+def test_if_unchanged_errors() -> None:
+    product = Product(id="not-loaded", product_id="p", price=1.0, stock=1)
+    with pytest.raises(ValueError):
+        product.update(if_unchanged=True)
+    with pytest.raises(ValueError):
+        product.delete(if_unchanged=True)
+
+    product.save()
+    with pytest.raises(ValueError):
+        product.delete(recursive=True, if_unchanged=True)
+
+
+
+def test_if_unchanged_in_batch() -> None:
+    product = Product(product_id="p", price=1.0, stock=1)
+    product.save()
+    assert product.id
+    other = Product.get_by_id(product.id)
+    product.increment("stock")
+
+    batch = get_batch()
+    other.update({"stock": 5}, if_unchanged=True, batch=batch)
+    with pytest.raises(FailedPrecondition):
+        batch.commit()
+    assert (Product.get_by_id(product.id)).stock == 2
 
 
 

@@ -35,6 +35,23 @@ IndexDefinition = NamedTuple(
 )
 
 
+@dataclass(frozen=True, eq=False)
+class DocumentState:
+    """
+    What a model knows about its stored document: when it was last updated, as of when
+    the model was loaded or written. It's bookkeeping, not part of the model's value,
+    so it's equal to any other state and doesn't affect comparing models.
+    """
+
+    update_time: Optional[datetime] = None
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, DocumentState)
+
+    def __hash__(self) -> int:
+        return 0
+
+
 @dataclass(frozen=True)
 class Aggregates:
     """

@@ -1,5 +1,7 @@
 import re
 from abc import ABC
+from contextlib import contextmanager
+from datetime import datetime
 from logging import getLogger
 from string import Formatter
 from typing import (
@@ -7,6 +9,7 @@ from typing import (
     AsyncIterator,
     Dict,
     Iterable,
+    Iterator,
     List,
     Optional,
     Tuple,
@@ -17,8 +20,10 @@ from typing import (
 )
 
 import pydantic
+from google.api_core.exceptions import FailedPrecondition
 from google.cloud.firestore_v1 import (
     And,
+    AsyncClient,
     AsyncCollectionReference,
     AsyncDocumentReference,
     AsyncWriteBatch,
@@ -36,6 +41,7 @@ import firedantic.operators as op
 from firedantic import async_truncate_collection
 from firedantic.common import (
     Aggregates,
+    DocumentState,
     FieldIndexDefinition,
     IndexDefinition,
     OrderDirection,
@@ -49,6 +55,7 @@ from firedantic.common import (
 from firedantic.configurations import configuration
 from firedantic.exceptions import (
     CollectionNotDefined,
+    DocumentChangedError,
     InvalidDocumentID,
     ModelNotFoundError,
 )
@@ -127,6 +134,22 @@ def _get_col_ref(cls, collection_name: Optional[str] = None) -> AsyncCollectionR
     return col_ref
 
 
+@contextmanager
+def report_conflict(if_unchanged: bool) -> Iterator[None]:
+    """
+    Turns the error Firestore raises when an `if_unchanged` precondition fails into
+    `DocumentChangedError`.
+    """
+    try:
+        yield
+    except FailedPrecondition as error:
+        if not if_unchanged:
+            raise
+        raise DocumentChangedError(
+            "The document was changed or deleted since the model was loaded or written"
+        ) from error
+
+
 def get_writer(
     transaction: Optional[AsyncTransaction], batch: Optional[AsyncWriteBatch]
 ) -> Optional[AsyncWriteBatch]:
@@ -160,6 +183,8 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
     # Set on models loaded by a collection group query, so they can be saved,
     # reloaded and deleted without knowing their parent document.
     _firedantic_doc_ref: Optional[AsyncDocumentReference] = PrivateAttr(default=None)
+    # The stored document's update time, for writes with if_unchanged=True
+    _firedantic_state: DocumentState = PrivateAttr(default_factory=DocumentState)
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
@@ -199,8 +224,10 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         # The transaction or batch must come from the same client as the model
         if writer is not None:
             writer.set(doc_ref, data, merge=merge)
+            self._set_update_time(None)
         else:
-            await doc_ref.set(data, merge=merge)
+            result = await doc_ref.set(data, merge=merge)
+            self._set_update_time(result.update_time)
 
         setattr(self, self.__document_id__, doc_ref.id)
 
@@ -233,8 +260,10 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
 
         if writer is not None:
             writer.create(doc_ref, data)
+            self._set_update_time(None)
         else:
-            await doc_ref.create(data)
+            result = await doc_ref.create(data)
+            self._set_update_time(result.update_time)
 
         setattr(self, self.__document_id__, doc_ref.id)
 
@@ -244,6 +273,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         *fields: str,
         transaction: Optional[AsyncTransaction] = None,
         batch: Optional[AsyncWriteBatch] = None,
+        if_unchanged: bool = False,
     ) -> None: ...
 
     @overload
@@ -254,6 +284,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         *,
         transaction: Optional[AsyncTransaction] = None,
         batch: Optional[AsyncWriteBatch] = None,
+        if_unchanged: bool = False,
     ) -> None: ...
 
     async def update(
@@ -261,6 +292,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         *fields: Union[str, Dict[str, Any]],
         transaction: Optional[AsyncTransaction] = None,
         batch: Optional[AsyncWriteBatch] = None,
+        if_unchanged: bool = False,
     ) -> None:
         """
         Updates fields of the stored document, leaving its other fields as they are.
@@ -284,8 +316,15 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         :param fields: Names of the model fields to write, or a dict of changes.
         :param transaction: Optional transaction to use.
         :param batch: Optional write batch to add the write to.
+        :param if_unchanged: Only write if the stored document hasn't changed since this
+            model was loaded or written, which `get_update_time()` tells. Without field
+            names, this saves the whole model only if nobody else changed it.
         :raise ModelNotFoundError: If the model has not been saved.
-        :raise ValueError: If a field is not a field of the model.
+        :raise ValueError: If a field is not a field of the model, or with
+            `if_unchanged` if the model's update time isn't known.
+        :raise DocumentChangedError: With `if_unchanged`, if the stored document was
+            changed or deleted. In a transaction or batch, Firestore raises this as a
+            `FailedPrecondition` on commit.
         :raise pydantic.ValidationError: If the changes are not valid for the model.
         :raise google.api_core.exceptions.NotFound: If the document does not exist.
         """
@@ -304,11 +343,15 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
                 raise TypeError("update() takes field names or one dict of changes, not both")
             data = self._prepare_field_update(fields)  # type: ignore[arg-type]
 
+        option = self._get_write_option(if_unchanged)
         doc_ref = self._get_doc_ref()
         if writer is not None:
-            writer.update(doc_ref, data)
+            writer.update(doc_ref, data, option=option)
+            self._set_update_time(None)
             return
-        await doc_ref.update(data)
+        with report_conflict(if_unchanged):
+            result = await doc_ref.update(data, option=option)
+        self._set_update_time(result.update_time)
 
         if updated_model is not None:
             self.__dict__.update(updated_model.__dict__)
@@ -431,8 +474,10 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         data = {field: Increment(amount)}
         if writer is not None:
             writer.update(doc_ref, data)
+            self._set_update_time(None)
             return
-        await doc_ref.update(data)
+        result = await doc_ref.update(data)
+        self._set_update_time(result.update_time)
         increment_locally(self, field, amount)
 
     async def delete(
@@ -441,6 +486,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         *,
         batch: Optional[AsyncWriteBatch] = None,
         recursive: bool = False,
+        if_unchanged: bool = False,
     ) -> Optional[int]:
         """
         Deletes this specific model instance from the database.
@@ -453,23 +499,63 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         :param transaction: Optional transaction to use.
         :param batch: Optional write batch to add the write to.
         :param recursive: Also delete all documents in subcollections below this one.
+        :param if_unchanged: Only delete if the stored document hasn't changed since
+            this model was loaded or written, which `get_update_time()` tells.
         :return: Number of deleted documents with `recursive=True`, otherwise None.
         :raise DocumentIDError: If the ID is not valid.
-        :raise ValueError: If `recursive=True` is used with a transaction or batch.
+        :raise ValueError: If `recursive=True` is used with a transaction, batch or
+            `if_unchanged`, or with `if_unchanged` if the model's update time isn't known.
+        :raise DocumentChangedError: With `if_unchanged`, if the stored document was
+            changed or deleted. In a transaction or batch, Firestore raises this as a
+            `FailedPrecondition` on commit.
         """
         writer = get_writer(transaction, batch)
         doc_ref = self._get_doc_ref()
         if recursive:
-            if writer is not None:
-                raise ValueError("Recursive delete can not be used in a transaction or batch")
+            if writer is not None or if_unchanged:
+                raise ValueError(
+                    "Recursive delete can not be used in a transaction or batch, "
+                    "or with if_unchanged"
+                )
             client = configuration.get_async_client(self.__db_config__)
             return await client.recursive_delete(doc_ref)
+        option = self._get_write_option(if_unchanged)
         if writer is not None:
             # Like save(): the transaction or batch must come from the same client
-            writer.delete(doc_ref)
+            writer.delete(doc_ref, option=option)
+            self._set_update_time(None)
             return None
-        await doc_ref.delete()
+        with report_conflict(if_unchanged):
+            await doc_ref.delete(option=option)
+        self._set_update_time(None)
         return None
+
+    def get_update_time(self) -> Optional[datetime]:
+        """
+        Returns when the stored document was last updated, as of when this model was
+        loaded or last written, or None if that isn't known, e.g. for a model that
+        hasn't been saved, or after a write in a transaction or batch. Writes with
+        `if_unchanged=True` check it.
+        """
+        return self._firedantic_state.update_time
+
+    def _set_update_time(self, update_time: Optional[datetime]) -> None:
+        # A new state instead of changing it, since copies of the model share it
+        self._firedantic_state = DocumentState(update_time)
+
+    def _get_write_option(self, if_unchanged: bool) -> Any:
+        """
+        Returns the precondition for a write with `if_unchanged`, or None.
+        """
+        if not if_unchanged:
+            return None
+        update_time = self.get_update_time()
+        if update_time is None:
+            raise ValueError(
+                f"The update time of this {type(self).__name__} isn't known, so "
+                "if_unchanged can't be checked. Load or reload the model first."
+            )
+        return AsyncClient.write_option(last_update_time=update_time)
 
     async def reload(self, transaction: Optional[AsyncTransaction] = None) -> None:
         """
@@ -490,6 +576,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         assert doc_id == updated_model_doc_id
 
         self.__dict__.update(updated_model.__dict__)
+        self._firedantic_state = updated_model._firedantic_state
 
     def get_document_id(self) -> Optional[str]:
         """
@@ -679,7 +766,9 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
             async for doc in query.stream(transaction=transaction):  # type: ignore
                 data = doc.to_dict()
                 if data is not None:
-                    yield cls._model_from_data(doc.id, data)
+                    model = cls._model_from_data(doc.id, data)
+                    model._set_update_time(doc.update_time)
+                    yield model
 
     @classmethod
     async def count(
@@ -1064,6 +1153,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
                         continue
                     model = cls._model_from_data(doc.id, data)
                     model._firedantic_doc_ref = doc.reference  # type: ignore
+                    model._set_update_time(doc.update_time)
                     found += 1
                     yield model
 
@@ -1545,6 +1635,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
             data = doc.to_dict()
             if data is not None:
                 found[doc.id] = cls._model_from_data(doc.id, data)
+                found[doc.id]._set_update_time(doc.update_time)
         return [found[doc_id] for doc_id in unique_ids if doc_id in found]
 
     @classmethod
@@ -1564,6 +1655,7 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         data[cls.__document_id__] = doc_ref.id
         model = cls(**data)
         setattr(model, cls.__document_id__, doc_ref.id)
+        model._set_update_time(document.update_time)
         return model
 
     @classmethod

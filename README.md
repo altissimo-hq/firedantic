@@ -865,6 +865,31 @@ written until the batch commits. Both helpers take the configuration name, for e
 `get_batch("backup")`, and the models must use the same configuration. Unlike a
 transaction, a batch can't read, and it isn't retried.
 
+## Optimistic concurrency
+
+Models remember when their stored document was last updated, as of when they were loaded
+or written, which `get_update_time()` returns. With `if_unchanged=True`, `update()` and
+`delete()` only write if nobody changed the document since, so two people editing the
+same document can't overwrite each other's changes without knowing:
+
+```python
+from firedantic.exceptions import DocumentChangedError
+
+event = Event.get_by_id(event_id)
+event.title = "New title"
+try:
+    event.update(if_unchanged=True)  # writes all fields, only if unchanged
+except DocumentChangedError:
+    event.reload()  # someone else changed it: show them the stored version
+```
+
+`update()` without field names writes the whole model, but keeps stored fields the model
+doesn't have. Writes through the same model keep its update time current, so it can make
+several conditional writes in a row. After a write in a transaction or batch the update
+time is unknown until the model is loaded again, and a failed precondition makes the
+commit raise Firestore's `FailedPrecondition`. `DocumentChangedError` is a
+`FailedPrecondition` too.
+
 ## Transactions
 
 Firedantic has basic support for

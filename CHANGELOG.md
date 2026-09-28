@@ -9,6 +9,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Added optimistic concurrency: `update()` and `delete()` take `if_unchanged=True` to
+  write only if the stored document hasn't changed since the model was loaded or
+  written, and raise `DocumentChangedError` if it has. Models track the document's
+  update time, which `get_update_time()` returns.
 - Added `stream()` and `stream_in_group()`, which yield the models of `find()` and
   `find_in_group()` one at a time instead of loading them all into a list. They take the
   same arguments, except `limit_to_last`.
