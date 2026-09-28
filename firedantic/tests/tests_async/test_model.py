@@ -335,6 +335,43 @@ async def test_find_cursor_errors() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stream(create_product) -> None:
+    for p in TEST_PRODUCTS:
+        await create_product(**p)
+    order_by = [("stock", Query.ASCENDING)]
+
+    async def streamed(*args, **kwargs) -> List[Product]:
+        return [p async for p in Product.stream(*args, **kwargs)]
+
+    assert await streamed() == await Product.find()
+    assert await streamed({"stock": {op.GTE: 2}}, order_by) == await Product.find(
+        {"stock": {op.GTE: 2}}, order_by
+    )
+    first = await Product.find(order_by=order_by, limit=1)
+    assert [p.product_id for p in await streamed(order_by=order_by, limit=2, start_after=first[0])] == [
+        "b",
+        "c",
+    ]
+    assert [p.product_id for p in await streamed(order_by=order_by, end_at=first[0].id)] == ["a"]
+
+    # Stopping early doesn't read the rest
+    async for product in Product.stream(order_by=order_by):
+        assert product.product_id == "a"
+        break
+
+
+@pytest.mark.asyncio
+async def test_stream_in_transaction(create_product) -> None:
+    await create_product(stock=2)
+
+    @async_transactional
+    async def read_in_transaction(transaction: AsyncTransaction) -> List[Product]:
+        return [p async for p in Product.stream(transaction=transaction)]
+
+    assert [p.stock for p in await read_in_transaction(get_async_transaction())] == [2]
+
+
+@pytest.mark.asyncio
 async def test_find_pagination_missing_cursor() -> None:
     with pytest.raises(ModelNotFoundError):
         await Product.find(start_after="missing")

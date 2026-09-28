@@ -335,6 +335,43 @@ def test_find_cursor_errors() -> None:
 
 
 
+def test_stream(create_product) -> None:
+    for p in TEST_PRODUCTS:
+        create_product(**p)
+    order_by = [("stock", Query.ASCENDING)]
+
+    def streamed(*args, **kwargs) -> List[Product]:
+        return [p for p in Product.stream(*args, **kwargs)]
+
+    assert streamed() == Product.find()
+    assert streamed({"stock": {op.GTE: 2}}, order_by) == Product.find(
+        {"stock": {op.GTE: 2}}, order_by
+    )
+    first = Product.find(order_by=order_by, limit=1)
+    assert [p.product_id for p in streamed(order_by=order_by, limit=2, start_after=first[0])] == [
+        "b",
+        "c",
+    ]
+    assert [p.product_id for p in streamed(order_by=order_by, end_at=first[0].id)] == ["a"]
+
+    # Stopping early doesn't read the rest
+    for product in Product.stream(order_by=order_by):
+        assert product.product_id == "a"
+        break
+
+
+
+def test_stream_in_transaction(create_product) -> None:
+    create_product(stock=2)
+
+    @transactional
+    def read_in_transaction(transaction: Transaction) -> List[Product]:
+        return [p for p in Product.stream(transaction=transaction)]
+
+    assert [p.stock for p in read_in_transaction(get_transaction())] == [2]
+
+
+
 def test_find_pagination_missing_cursor() -> None:
     with pytest.raises(ModelNotFoundError):
         Product.find(start_after="missing")

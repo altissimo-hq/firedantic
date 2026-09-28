@@ -347,6 +347,21 @@ async def test_find_in_group_backward_pagination_skips_mismatched_paths() -> Non
 
 
 @pytest.mark.asyncio
+async def test_stream_in_group() -> None:
+    await _create_surveys()
+    animal = (await Animal.find())[0]
+    nested = animal._get_doc_ref().collection("visits").document("v").collection("surveys")
+    await nested.document("nested").set({"kind": "animal_survey", "score": 11})
+    order_by = [("score", Query.ASCENDING)]
+
+    streamed = [s async for s in AnimalSurvey.stream_in_group(order_by=order_by, limit=4)]
+    # The nested survey is skipped, and one more is read in its place
+    assert [s.score for s in streamed] == [10, 11, 12, 20]
+    assert streamed == await AnimalSurvey.find_in_group(order_by=order_by, limit=4)
+    assert all(s.get_document_path() for s in streamed)
+
+
+@pytest.mark.asyncio
 async def test_find_in_group_pagination_with_ties() -> None:
     animal = Animal(name="tie")
     await animal.save()
