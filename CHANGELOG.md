@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-09-28
+
 ### Changed
 
 - This fork is published on PyPI as `altissimo-firedantic`. The import name stays
@@ -544,7 +546,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.22.1...HEAD
+[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.22.2...HEAD
+[0.22.2]: https://github.com/altissimo-hq/firedantic/compare/0.22.1...0.22.2
 [0.22.1]: https://github.com/altissimo-hq/firedantic/compare/0.22.0...0.22.1
 [0.22.0]: https://github.com/altissimo-hq/firedantic/compare/0.21.1...0.22.0
 [0.21.1]: https://github.com/altissimo-hq/firedantic/compare/0.21.0...0.21.1
