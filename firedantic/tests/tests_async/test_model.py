@@ -1141,6 +1141,26 @@ async def test_if_unchanged_in_batch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_require_document_id(create_product) -> None:
+    product = Product(product_id="p", price=1.0, stock=1)
+    with pytest.raises(ModelNotFoundError):
+        product.require_document_id()
+
+    await product.save()
+    doc_id: str = product.require_document_id()
+    assert doc_id == product.id
+    loaded = await Product.get_by_id(doc_id)
+    assert loaded.require_document_id() == doc_id
+
+    # Models with a custom ID field
+    custom = CustomIDModel(bar="x")
+    with pytest.raises(ModelNotFoundError):
+        custom.require_document_id()
+    await custom.save()
+    assert custom.require_document_id() == custom.foo
+
+
+@pytest.mark.asyncio
 async def test_find_not_in(create_company) -> None:
     ids = ["1234555-1", "1234567-8", "2131232-4", "4124432-4"]
     for company_id in ids:

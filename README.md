@@ -136,6 +136,10 @@ company.save()
 # Access the company id
 print(company.id)
 
+# The id is Optional[str], since new models get one when saved. Where a str is
+# needed, require_document_id() returns it, or raises if the model isn't saved yet.
+Company.get_by_id(company.require_document_id())
+
 # Reloads model data from the database
 company.reload()
 ```
