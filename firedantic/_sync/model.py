@@ -6,6 +6,7 @@ from typing import (
     Any,
     Dict,
     Iterable,
+    Iterator,
     List,
     Optional,
     Tuple,
@@ -576,10 +577,87 @@ class BareModel(pydantic.BaseModel, ABC):
             it. Can't be used with `limit` or `offset`.
         :return: List of found models.
         """
+        # The sync version could use list(), which async code can't
+        models = [  # noqa: C416
+            model
+            for model in cls._iterate(
+                filter_,
+                order_by,
+                limit,
+                offset,
+                start_after,
+                transaction,
+                start_at,
+                end_before,
+                end_at,
+                limit_to_last,
+            )
+        ]
+        # With limit_to_last the query runs reversed
+        if limit_to_last is not None:
+            models.reverse()
+        return models
+
+    @classmethod
+    def stream(  # pylint: disable=too-many-arguments
+        cls: Type[TBareModel],
+        filter_: Optional[Dict[str, Any]] = None,
+        order_by: Optional[_OrderBy] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        start_after: Union["BareModel", str, DocumentSnapshot, None] = None,
+        transaction: Optional[Transaction] = None,
+        *,
+        start_at: Union["BareModel", str, DocumentSnapshot, None] = None,
+        end_before: Union["BareModel", str, DocumentSnapshot, None] = None,
+        end_at: Union["BareModel", str, DocumentSnapshot, None] = None,
+    ) -> Iterator[TBareModel]:
+        """
+        Yields the models matching a filter one at a time, as Firestore returns them,
+        instead of loading them all into a list like `find()` does. Takes the same
+        arguments as `find()`, except `limit_to_last`, whose results can only be
+        returned once they have all been read.
+
+        Example: `for product in Product.stream({"stock": {">=": 1}}): ...`.
+
+        :return: Iterator of found models.
+        """
+        for model in cls._iterate(
+            filter_,
+            order_by,
+            limit,
+            offset,
+            start_after,
+            transaction,
+            start_at,
+            end_before,
+            end_at,
+            None,
+        ):
+            yield model
+
+    @classmethod
+    def _iterate(  # pylint: disable=too-many-arguments
+        cls: Type[TBareModel],
+        filter_: Optional[Dict[str, Any]],
+        order_by: Optional[_OrderBy],
+        limit: Optional[int],
+        offset: Optional[int],
+        start_after: Any,
+        transaction: Optional[Transaction],
+        start_at: Any,
+        end_before: Any,
+        end_at: Any,
+        limit_to_last: Optional[int],
+    ) -> Iterator[TBareModel]:
+        """
+        Yields the models of a `find()` query. With `limit_to_last` the query runs
+        reversed, so the models come in reverse order.
+        """
         cursors = [
             cls._get_cursor_path(cursor) for cursor in (start_at, start_after, end_at, end_before)
         ]
-        query, start, limit, reverse = cls._apply_ordering(
+        query, start, limit, _ = cls._apply_ordering(
             cls._get_query(filter_),
             filter_,
             order_by,
@@ -598,17 +676,10 @@ class BareModel(pydantic.BaseModel, ABC):
             query = query.offset(offset)  # type: ignore
 
         with report_missing_index():
-            models = [
-                cls._model_from_data(doc_id, doc_dict)
-                for doc_id, doc_dict in (
-                    (doc.id, doc.to_dict())
-                    for doc in query.stream(transaction=transaction)  # type: ignore
-                )
-                if doc_dict is not None
-            ]
-        if reverse:
-            models.reverse()
-        return models
+            for doc in query.stream(transaction=transaction):  # type: ignore
+                data = doc.to_dict()
+                if data is not None:
+                    yield cls._model_from_data(doc.id, data)
 
     @classmethod
     def count(
@@ -856,10 +927,86 @@ class BareModel(pydantic.BaseModel, ABC):
             it. Can't be used with `limit` or `offset`.
         :return: List of found models.
         """
+        # The sync version could use list(), which async code can't
+        models = [  # noqa: C416
+            model
+            for model in cls._iterate_group(
+                filter_,
+                order_by,
+                limit,
+                offset,
+                start_after,
+                transaction,
+                start_at,
+                end_before,
+                end_at,
+                limit_to_last,
+            )
+        ]
+        # With limit_to_last the query runs reversed
+        if limit_to_last is not None:
+            models.reverse()
+        return models
+
+    @classmethod
+    def stream_in_group(  # pylint: disable=too-many-arguments
+        cls: Type[TBareModel],
+        filter_: Optional[Dict[str, Any]] = None,
+        order_by: Optional[_OrderBy] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        start_after: Union["BareModel", str, DocumentSnapshot, None] = None,
+        transaction: Optional[Transaction] = None,
+        *,
+        start_at: Union["BareModel", str, DocumentSnapshot, None] = None,
+        end_before: Union["BareModel", str, DocumentSnapshot, None] = None,
+        end_at: Union["BareModel", str, DocumentSnapshot, None] = None,
+    ) -> Iterator[TBareModel]:
+        """
+        Yields the models of `find_in_group()` one at a time, as Firestore returns
+        them, instead of loading them all into a list. Takes the same arguments as
+        `find_in_group()`, except `limit_to_last`.
+
+        Example: `for survey in AnimalSurvey.stream_in_group({"status": "open"}): ...`.
+
+        :return: Iterator of found models.
+        """
+        for model in cls._iterate_group(
+            filter_,
+            order_by,
+            limit,
+            offset,
+            start_after,
+            transaction,
+            start_at,
+            end_before,
+            end_at,
+            None,
+        ):
+            yield model
+
+    @classmethod
+    def _iterate_group(  # pylint: disable=too-many-arguments
+        cls: Type[TBareModel],
+        filter_: Optional[Dict[str, Any]],
+        order_by: Optional[_OrderBy],
+        limit: Optional[int],
+        offset: Optional[int],
+        start_after: Any,
+        transaction: Optional[Transaction],
+        start_at: Any,
+        end_before: Any,
+        end_at: Any,
+        limit_to_last: Optional[int],
+    ) -> Iterator[TBareModel]:
+        """
+        Yields the models of a `find_in_group()` query. With `limit_to_last` the query
+        runs reversed, so the models come in reverse order.
+        """
         # The Firestore client adds the implicit orderings for cursors itself, but adds
         # __name__ once per filter on it, which the server rejects, so with the path
         # range the query gets all its orderings explicitly
-        query, start, limit, reverse = cls._apply_ordering(
+        query, start, limit, _ = cls._apply_ordering(
             cls._get_group_query(filter_),
             filter_,
             order_by,
@@ -875,7 +1022,7 @@ class BareModel(pydantic.BaseModel, ABC):
         )
 
         path_pattern = cls._get_collection_group_path_pattern()
-        models: List[TBareModel] = []
+        found = 0
         cursor = None
         first_round = True
         while True:
@@ -884,7 +1031,7 @@ class BareModel(pydantic.BaseModel, ABC):
                 page_query = page_query.start_after(cursor)
             elif start is not None:
                 page_query = getattr(page_query, start[0])(start[1])
-            requested = None if limit is None else limit - len(models)
+            requested = None if limit is None else limit - found
             if requested is not None:
                 page_query = page_query.limit(requested)  # type: ignore
             # Later rounds continue from the cursor, which is already past the offset
@@ -911,14 +1058,13 @@ class BareModel(pydantic.BaseModel, ABC):
                         continue
                     model = cls._model_from_data(doc.id, data)
                     model._firedantic_doc_ref = doc.reference  # type: ignore
-                    models.append(model)
+                    found += 1
+                    yield model
 
             # Fetch more only when skipped documents left the page short and the
             # query may still have more results
             if requested is None or skipped == 0 or fetched < requested:
-                if reverse:
-                    models.reverse()
-                return models
+                return
 
     @classmethod
     def count_in_group(

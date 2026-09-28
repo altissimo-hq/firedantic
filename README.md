@@ -175,6 +175,10 @@ print(result.count, result.sum["stock"], result.avg["unit_value"])
 
 # Fetch several documents by ID in one request; missing ones are left out
 Product.get_by_ids(["id-1", "id-2"])
+
+# Go through a large result one model at a time instead of loading it into a list
+for product in Product.stream({"stock": {">=": 1}}):
+    print(product.product_id)
 ```
 
 To page through results, pass the last model of the previous page as `start_after`. Its
@@ -463,7 +467,8 @@ average_score = await AnimalSurvey.avg_in_group("score")
 ### Pagination
 
 Like `find()`, `find_in_group()` takes the last model of the previous page as
-`start_after`, and the other cursors and `limit_to_last` too. Its `get_document_path()`
+`start_after`, and the other cursors and `limit_to_last` too. `stream_in_group()` yields
+the models one at a time, like `stream()` does for `find()`. Its `get_document_path()`
 works too, but not its document ID, since the ID alone doesn't say which collection of
 the group the document is in:
 
@@ -881,6 +886,7 @@ models:
 - `Model.increment(field, amount, transaction=transaction)`
 - `Model.reload(transaction=transaction)`
 - `Model.save(transaction=transaction)`
+- `Model.stream(transaction=transaction)`
 - `Model.sum(field, transaction=transaction)`
 - `Model.update(*fields, transaction=transaction)`
 - `Model.update(changes, transaction=transaction)`
