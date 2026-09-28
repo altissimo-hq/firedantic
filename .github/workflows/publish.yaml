@@ -54,6 +54,15 @@ jobs:
       - name: Run tests 🌈
         run: poetry run invoke test
 
+      - name: Check the tag matches the package version 🏷️
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version="$(poetry version -s)"
+          if [ "${GITHUB_REF_NAME}" != "${version}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package version ${version}" >&2
+            exit 1
+          fi
+
       - name: Build the package 📦
         run: poetry build
 
