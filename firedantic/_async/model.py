@@ -1360,9 +1360,11 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
             raise ValueError("limit_to_last can't be used with limit or offset")
 
         ordering: List[Tuple[str, str]] = list(order_by or [])
-        if full_ordering or reverse:
-            # Reversing needs every ordering Firestore would add implicitly
-            ordering = cls._get_full_ordering(filter_, ordering)
+        # Reversing needs every ordering Firestore would add implicitly. With an explicit
+        # __name__ ordering, Firestore adds inequality fields after it and rejects the
+        # query, so those go before it instead.
+        if full_ordering or reverse or DOCUMENT_ID in dict(ordering):
+            ordering = list(cls.get_full_ordering(filter_, order_by))
         start = ("start_at", start_at) if start_at is not None else ("start_after", start_after)
         end = ("end_at", end_at) if end_at is not None else ("end_before", end_before)
         if reverse:
@@ -1388,21 +1390,37 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
         return query, start_cursor, limit_to_last if reverse else limit, reverse
 
     @classmethod
-    def _get_full_ordering(
-        cls, filter_: Optional[Dict[str, Any]], order_by: List[Tuple[str, str]]
-    ) -> List[Tuple[str, str]]:
+    def get_full_ordering(
+        cls,
+        filter_: Optional[Dict[str, Any]] = None,
+        order_by: Optional[_OrderBy] = None,
+    ) -> _OrderBy:
         """
-        Returns the orderings Firestore uses for a query: the given ones, then the
-        fields of inequality filters by name, then the document ID, in the direction of
-        the last given ordering.
+        Returns the complete ordering of a `find()` query with this filter and order:
+        the given orderings, then the fields of inequality filters that aren't ordered
+        yet, by name, then the document ID `"__name__"`, in the direction of the last
+        given ordering. Firestore orders queries like this implicitly, and cursors
+        depend on it, e.g. for pagination. Inequality filters inside `op.OR` and
+        `op.AND` count too.
+
+        If `order_by` already ends with `"__name__"`, the inequality fields go before
+        it, since nothing can be ordered after the document ID.
+
+        Example: `Product.get_full_ordering({"stock": {">=": 1}}, [("price", Query.DESCENDING)])`
+        returns `[("price", "DESCENDING"), ("stock", "DESCENDING"), ("__name__", "DESCENDING")]`.
+
+        :param filter_: The filter criteria.
+        :param order_by: List of columns and direction to order results by.
+        :return: The complete list of columns and directions.
         """
-        ordered = {field for field, _ in order_by}
-        direction = order_by[-1][1] if order_by else "ASCENDING"
-        ordering = list(order_by)
-        for field in sorted(cls._get_inequality_fields(filter_) - ordered):
+        given = list(order_by or [])
+        name_ordering = [(f, d) for f, d in given if f == DOCUMENT_ID]
+        ordering = [(f, d) for f, d in given if f != DOCUMENT_ID]
+        ordered = {field for field, _ in given}
+        direction: OrderDirection = given[-1][1] if given else "ASCENDING"
+        for field in sorted(cls._get_inequality_fields(filter_) - ordered - {DOCUMENT_ID}):
             ordering.append((field, direction))
-        if DOCUMENT_ID not in ordered:
-            ordering.append((DOCUMENT_ID, direction))
+        ordering.extend(name_ordering or [(DOCUMENT_ID, direction)])
         return ordering
 
     @classmethod

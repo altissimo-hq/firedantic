@@ -372,6 +372,54 @@ async def test_stream_in_transaction(create_product) -> None:
     assert [p.stock for p in await read_in_transaction(get_async_transaction())] == [2]
 
 
+def test_get_full_ordering() -> None:
+    asc, desc = Query.ASCENDING, Query.DESCENDING
+    assert Product.get_full_ordering() == [("__name__", asc)]
+    assert Product.get_full_ordering({"stock": {op.GTE: 1}}, [("price", desc)]) == [
+        ("price", desc),
+        ("stock", desc),
+        ("__name__", desc),
+    ]
+    # Inequality fields inside $or count, and ordered ones aren't repeated
+    assert Product.get_full_ordering(
+        {op.OR: [{"stock": {op.GT: 1}}, {"price": {op.LT: 2}}], "product_id": "a"},
+        [("stock", asc)],
+    ) == [("stock", asc), ("price", asc), ("__name__", asc)]
+    # Nothing can come after an explicit __name__, so inequality fields go before it,
+    # in the direction of the last ordering
+    assert Product.get_full_ordering(
+        {"stock": {op.GTE: 1}}, [("price", asc), ("__name__", desc)]
+    ) == [("price", asc), ("stock", desc), ("__name__", desc)]
+    # A filter on __name__ doesn't add it twice
+    assert Product.get_full_ordering({"__name__": {op.GTE: "x"}}) == [("__name__", asc)]
+
+
+@pytest.mark.asyncio
+async def test_find_with_explicit_name_ordering(create_product) -> None:
+    for p in TEST_PRODUCTS:
+        await create_product(**p)
+    # Firestore alone would add the stock ordering after __name__ and reject the query
+    found = await Product.find(
+        {"stock": {op.GTE: 1}}, order_by=[("product_id", Query.DESCENDING), ("__name__", Query.DESCENDING)]
+    )
+    assert [p.product_id for p in found] == ["d", "c", "b"]
+
+
+@pytest.mark.asyncio
+async def test_find_with_name_filter_and_limit_to_last(create_product) -> None:
+    products = [await create_product(**p) for p in TEST_PRODUCTS]
+    first = min(products, key=lambda p: p.id or "")
+    ref = Product._get_col_ref().document(first.id)  # pylint: disable=protected-access
+
+    # The emulator can't scan by document ID alone in descending order, which
+    # limit_to_last needs, so order by a field first
+    found = await Product.find(
+        {"__name__": {op.GT: ref}}, order_by=[("stock", Query.ASCENDING)], limit_to_last=2
+    )
+    rest = sorted((p for p in products if p.id != first.id), key=lambda p: (p.stock, p.id or ""))
+    assert [p.id for p in found] == [p.id for p in rest[-2:]]
+
+
 @pytest.mark.asyncio
 async def test_find_pagination_missing_cursor() -> None:
     with pytest.raises(ModelNotFoundError):
