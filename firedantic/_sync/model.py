@@ -6,6 +6,7 @@ from logging import getLogger
 from string import Formatter
 from typing import (
     Any,
+    ClassVar,
     Dict,
     Iterable,
     Iterator,
@@ -15,6 +16,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
     overload,
 )
 
@@ -170,14 +172,14 @@ class BareModel(pydantic.BaseModel, ABC):
     Implements basic functionality for Pydantic models, such as save, delete, find etc.
     """
 
-    __collection__: Optional[str] = None
-    __document_id__: str
-    __ttl_field__: Optional[str] = None
-    __composite_indexes__: Optional[Iterable[IndexDefinition]] = None
-    __field_indexes__: Optional[Iterable[FieldIndexDefinition]] = None
-    __db_config__: str = "(default)"  # override in subclasses when needed
-    __collection_group__: Optional[str] = None
-    __discriminator__: Optional[str] = None
+    __collection__: ClassVar[Optional[str]] = None
+    __document_id__: ClassVar[str]
+    __ttl_field__: ClassVar[Optional[str]] = None
+    __composite_indexes__: ClassVar[Optional[Iterable[IndexDefinition]]] = None
+    __field_indexes__: ClassVar[Optional[Iterable[FieldIndexDefinition]]] = None
+    __db_config__: ClassVar[str] = "(default)"  # override in subclasses when needed
+    __collection_group__: ClassVar[Optional[str]] = None
+    __discriminator__: ClassVar[Optional[str]] = None
 
     # Set on models loaded by a collection group query, so they can be saved,
     # reloaded and deleted without knowing their parent document.
@@ -1732,7 +1734,7 @@ class BareModel(pydantic.BaseModel, ABC):
 
 
 class Model(BareModel):
-    __document_id__: str = "id"
+    __document_id__: ClassVar[str] = "id"
     id: Optional[str] = None
 
     @classmethod
@@ -1771,9 +1773,18 @@ class BareSubCollection(ABC):
     __document_id__: str
 
     @classmethod
-    def model_for(cls, parent, model_class):
+    def model_for(
+        cls, parent: "BareModel", model_class: Type[TBareSubModel]
+    ) -> Type[TBareSubModel]:
         """
-        Returns the model for this subcollection.
+        Returns a subclass of `model_class` that reads and writes this subcollection
+        under the parent document.
+
+        :param parent: The parent document's model. It can be a sub-model itself.
+        :param model_class: The sub-model class to return a subclass of.
+        :return: The sub-model class for the parent's subcollection.
+        :raise CollectionNotDefined: If `__collection_tpl__` isn't set.
+        :raise InvalidDocumentID: If a placeholder value isn't a valid document ID.
         """
         parent_props = parent.model_dump(by_alias=True)
         template = cls.__collection_tpl__
@@ -1799,7 +1810,7 @@ class BareSubCollection(ABC):
                 ) from e
 
         name = model_class.__name__
-        ic = type(name, (model_class,), {})
+        ic = cast(Type[TBareSubModel], type(name, (model_class,), {}))
         ic.__collection_cls__ = cls
         ic.__collection__ = template.format(**parent_props)
         ic.__document_id__ = cls.__document_id__
@@ -1811,9 +1822,9 @@ class BareSubCollection(ABC):
 
 
 class BareSubModel(BareModel, ABC):
-    __collection_cls__: "BareSubCollection"
-    __collection__: Optional[str] = None
-    __document_id__: str
+    __collection_cls__: ClassVar[Type["BareSubCollection"]]
+    __collection__: ClassVar[Optional[str]] = None
+    __document_id__: ClassVar[str]
 
     class Collection(BareSubCollection, ABC):
         pass
@@ -1861,9 +1872,13 @@ class BareSubModel(BareModel, ABC):
         return parent.id if parent is not None else None
 
     @classmethod
-    def model_for(cls, parent):
+    def model_for(cls: Type[TBareSubModel], parent: "BareModel") -> Type[TBareSubModel]:
         """
-        Returns the model for this submodel.
+        Returns this sub-model's class for the subcollection under a parent document,
+        e.g. `Talk.model_for(event)`.
+
+        :param parent: The parent document's model. It can be a sub-model itself.
+        :return: The sub-model class for the parent's subcollection.
         """
         return cls.Collection.model_for(parent, cls)
 
