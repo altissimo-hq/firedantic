@@ -7,6 +7,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.22.3] - 2026-09-28
+
+### Fixed
+
+- `SecretStr`, `SecretBytes` and `Secret[...]` fields are stored as their value. Since
+  0.20.0 they were stored as pydantic's masked placeholder `"**********"` (or
+  `b"**********"`), so the secret was lost, and filters on them compared against the
+  placeholder. Documents saved with 0.20.0 to 0.22.2 hold the placeholder, which can't
+  be turned back into the secret. To find them, query the secret field for
+  `"**********"`, and save the real values again. Before 0.20.0 these fields failed to
+  save.
+
 ## [0.22.2] - 2026-09-28
 
 ### Changed
@@ -546,7 +558,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.22.2...HEAD
+[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.22.3...HEAD
+[0.22.3]: https://github.com/altissimo-hq/firedantic/compare/0.22.2...0.22.3
 [0.22.2]: https://github.com/altissimo-hq/firedantic/compare/0.22.1...0.22.2
 [0.22.1]: https://github.com/altissimo-hq/firedantic/compare/0.22.0...0.22.1
 [0.22.0]: https://github.com/altissimo-hq/firedantic/compare/0.21.1...0.22.0

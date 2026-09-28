@@ -9,6 +9,7 @@ from google.cloud.firestore_v1.base_document import BaseDocumentReference
 from google.cloud.firestore_v1.field_path import FieldPath
 from google.cloud.firestore_v1.transforms import Sentinel, _NumericValue, _ValueList
 from google.cloud.firestore_v1.vector import Vector
+from pydantic import Secret, SecretBytes, SecretStr
 from pydantic_core import to_jsonable_python
 
 # Values the Firestore client stores as they are
@@ -157,9 +158,16 @@ def to_firestore_value(value: Any) -> Any:
     back into the model. ISO date strings sort correctly, but `Decimal` strings don't
     sort as numbers.
 
+    Secrets (`SecretStr`, `SecretBytes`, `Secret[...]`) are stored as their value, in
+    plain text: the secret types only hide values in `repr()` and logs. Their JSON form
+    is a masked placeholder, which would lose the value.
+
     :param value: The value to convert.
     :return: The value to store.
     """
+    if isinstance(value, (SecretStr, SecretBytes, Secret)):
+        # Before anything else: pydantic's JSON form of a secret is a placeholder
+        return to_firestore_value(value.get_secret_value())
     if isinstance(value, Enum):
         return to_firestore_value(value.value)
     if value is None or isinstance(value, _NATIVE_TYPES):
