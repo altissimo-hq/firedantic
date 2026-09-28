@@ -9,6 +9,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Added `start_at`, `end_before`, `end_at` and `limit_to_last` to `find()` and
+  `find_in_group()`, for paging backwards and ranges between cursors. `limit_to_last`
+  with `end_before` returns the page before a cursor.
 - Added `aggregate()` and `aggregate_in_group()`, which return the count and the sums
   and averages of several fields from one aggregation query, as `Aggregates`. Firestore
   only includes the documents that have every aggregated field.

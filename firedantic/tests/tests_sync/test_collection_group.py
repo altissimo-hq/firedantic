@@ -321,6 +321,32 @@ def test_find_in_group_pagination() -> None:
 
 
 
+def test_find_in_group_backward_pagination() -> None:
+    _create_surveys()
+    order_by = [("score", Query.ASCENDING)]
+
+    last = AnimalSurvey.find_in_group(order_by=order_by, limit_to_last=2)
+    before = AnimalSurvey.find_in_group(order_by=order_by, limit_to_last=3, end_before=last[0])
+    at = AnimalSurvey.find_in_group(order_by=order_by, start_at=before[1], end_at=last[0])
+
+    assert [s.score for s in last] == [21, 22]
+    assert [s.score for s in before] == [11, 12, 20]
+    assert [s.score for s in at] == [12, 20, 21]
+
+
+
+def test_find_in_group_backward_pagination_skips_mismatched_paths() -> None:
+    _create_surveys()
+    animal = (Animal.find())[0]
+    nested = animal._get_doc_ref().collection("visits").document("v").collection("surveys")
+    nested.document("nested").set({"kind": "animal_survey", "score": 999})
+
+    # The last document by score is skipped, and one more is fetched in its place
+    last = AnimalSurvey.find_in_group(order_by=[("score", Query.ASCENDING)], limit_to_last=2)
+    assert [s.score for s in last] == [21, 22]
+
+
+
 def test_find_in_group_pagination_with_ties() -> None:
     animal = Animal(name="tie")
     animal.save()

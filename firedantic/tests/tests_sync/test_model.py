@@ -278,6 +278,63 @@ def test_find_pagination_with_filter_and_ties(create_product) -> None:
 
 
 
+def test_find_backward_pagination(create_product) -> None:
+    for p in TEST_PRODUCTS:
+        create_product(**p)
+    order_by = [("stock", Query.ASCENDING)]
+
+    def ids(**kwargs) -> List[str]:
+        return [p.product_id for p in Product.find(order_by=order_by, **kwargs)]
+
+    page_2 = Product.find(order_by=order_by, offset=2, limit=2)
+    assert [p.product_id for p in page_2] == ["c", "d"]
+    # The page before page 2, by model, ID or path
+    assert ids(end_before=page_2[0], limit_to_last=2) == ["a", "b"]
+    assert ids(end_before=page_2[0].id, limit_to_last=2) == ["a", "b"]
+    assert ids(end_before=page_2[0].get_document_path(), limit_to_last=1) == ["b"]
+    assert ids(limit_to_last=3) == ["b", "c", "d"]
+    assert ids(start_at=page_2[0]) == ["c", "d"]
+    assert ids(end_at=page_2[0]) == ["a", "b", "c"]
+    assert ids(start_after=page_2[0], end_at=page_2[1]) == ["d"]
+    assert ids(start_at=page_2[0], end_before=page_2[1], limit_to_last=5) == ["c"]
+
+    descending = [p.product_id for p in Product.find(order_by=[("stock", Query.DESCENDING)], limit_to_last=2)]
+    assert descending == ["b", "a"]
+
+
+
+def test_find_backward_pagination_with_filter_and_ties(create_product) -> None:
+    for _ in range(5):
+        create_product(stock=1)
+    create_product(stock=0)
+    filter_ = {"stock": {op.GTE: 1}}
+
+    forward = Product.find(filter_)
+    backward: List[Product] = []
+    page = Product.find(filter_, limit_to_last=2)
+    while page:
+        backward = page + backward
+        page = Product.find(filter_, limit_to_last=2, end_before=page[0])
+
+    # Without order_by, both follow the inequality field, then the document ID
+    assert [p.id for p in backward] == [p.id for p in forward]
+    assert len(backward) == 5
+
+
+
+def test_find_cursor_errors() -> None:
+    order_by = [("stock", Query.ASCENDING)]
+    for kwargs in (
+        {"limit": 1, "limit_to_last": 1},
+        {"offset": 1, "limit_to_last": 1},
+        {"start_at": "a", "start_after": "b"},
+        {"end_at": "a", "end_before": "b"},
+    ):
+        with pytest.raises(ValueError):
+            Product.find(order_by=order_by, **kwargs)  # type: ignore[arg-type]
+
+
+
 def test_find_pagination_missing_cursor() -> None:
     with pytest.raises(ModelNotFoundError):
         Product.find(start_after="missing")
