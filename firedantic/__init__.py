@@ -36,6 +36,7 @@ from firedantic._sync.model import (
 )
 from firedantic._sync.ttl_policy import set_up_ttl_policies
 from firedantic.common import (
+    Aggregates,
     collection_group_field_index,
     collection_group_index,
     collection_index,

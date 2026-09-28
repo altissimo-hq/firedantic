@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError, fie
 
 import firedantic.operators as op
 from firedantic import (
+    Aggregates,
     Model,
     SubCollection,
     SubModel,
@@ -171,6 +172,55 @@ def test_sum_and_avg_paths() -> None:
     assert Counter.avg("totalCount") == 2.0
     assert Counter.avg("optional") == 1.0
     assert Counter.avg("missing") is None
+
+
+
+def test_aggregate(create_product) -> None:
+    assert Product.aggregate(sum=["stock"], avg=["price"]) == Aggregates(
+        count=0, sum={"stock": 0}, avg={"price": None}
+    )
+
+    for p in TEST_PRODUCTS:
+        create_product(**p, price=2.0)
+
+    result = Product.aggregate({"stock": {op.GTE: 1}}, sum=["stock", "price"], avg=["stock"])
+    assert result.count == 3
+    assert result.sum == {"stock": 6, "price": 6.0}
+    assert result.avg == {"stock": 2.0}
+    assert (Product.aggregate()).count == 4
+
+
+
+def test_aggregate_only_includes_documents_with_every_field() -> None:
+    Counter(totalCount=1, optional=10).save()
+    Counter(totalCount=3).save(exclude_none=True)
+
+    # The second counter has no "optional" field, so it's left out of everything
+    result = Counter.aggregate(sum=["totalCount"], avg=["optional"])
+    assert result == Aggregates(count=1, sum={"totalCount": 1}, avg={"optional": 10.0})
+    assert Counter.count() == 2
+
+    empty = Counter.aggregate(sum=["totalCount"], avg=["missing"])
+    assert empty.count == 0
+    assert empty.avg == {"missing": None}
+
+
+
+def test_aggregate_limits() -> None:
+    with pytest.raises(ValueError):
+        Product.aggregate(sum=["a", "b", "c"], avg=["d", "e"])
+
+
+
+def test_aggregate_in_transaction(create_product) -> None:
+    create_product(stock=2)
+    create_product(stock=4)
+
+    @transactional
+    def read_in_transaction(transaction: Transaction):
+        return Product.aggregate(avg=["stock"], transaction=transaction)
+
+    assert (read_in_transaction(get_transaction())).avg == {"stock": 3.0}
 
 
 

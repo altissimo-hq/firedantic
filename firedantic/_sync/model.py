@@ -34,6 +34,7 @@ from pydantic import PrivateAttr
 import firedantic.operators as op
 from firedantic import truncate_collection
 from firedantic.common import (
+    Aggregates,
     FieldIndexDefinition,
     IndexDefinition,
     OrderDirection,
@@ -657,6 +658,38 @@ class BareModel(pydantic.BaseModel, ABC):
         return cls._get_average(cls._get_query(filter_), field, transaction)
 
     @classmethod
+    def aggregate(
+        cls,
+        filter_: Optional[Dict[str, Any]] = None,
+        *,
+        sum: Iterable[str] = (),
+        avg: Iterable[str] = (),
+        transaction: Optional[Transaction] = None,
+    ) -> Aggregates:
+        """
+        Returns the count of the models matching a filter, with sums and averages of
+        numeric fields, from one aggregation query, so the documents themselves are
+        not read.
+
+        Firestore only includes the documents that have every aggregated field, so the
+        count is the number of matching models that have them all, and the sums and
+        averages are over those. Fields are Firestore field paths, and values that
+        aren't numbers are ignored. Averages are None if no document is included.
+        Firestore allows 5 aggregations per query, including the count, so at most 4
+        fields can be summed and averaged.
+
+        Example: `Event.aggregate({"status": "open"}, sum=["budget"], avg=["score"])`.
+
+        :param filter_: The filter criteria.
+        :param sum: Firestore field paths to sum.
+        :param avg: Firestore field paths to average.
+        :param transaction: Optional transaction to use.
+        :return: The count, and the sums and averages by field.
+        :raise ValueError: If more than 4 fields are summed and averaged.
+        """
+        return cls._get_aggregates(cls._get_query(filter_), sum, avg, transaction)
+
+    @classmethod
     def _get_query(cls, filter_: Optional[Dict[str, Any]]) -> Union[BaseQuery, CollectionReference]:
         """
         Returns the query for the model's collection with `filter_` applied.
@@ -676,6 +709,43 @@ class BareModel(pydantic.BaseModel, ABC):
             results = aggregation_query.get(transaction=transaction)
         # Sync stubs type the result as a flat list, but both return one list per query
         return results[0][0].value
+
+    @staticmethod
+    def _get_aggregates(
+        query: Union[BaseQuery, CollectionReference],
+        sum_fields: Iterable[str],
+        avg_fields: Iterable[str],
+        transaction: Optional[Transaction],
+    ) -> Aggregates:
+        """
+        Returns the count of the documents of `query` with the sums and averages of
+        fields, from one aggregation query.
+        """
+        sum_fields = list(sum_fields)
+        avg_fields = list(avg_fields)
+        if len(sum_fields) + len(avg_fields) > 4:
+            raise ValueError("Firestore allows at most 4 sums and averages next to the count")
+
+        aggregation_query: Any = query.count(alias="count")  # type: ignore[union-attr]
+        for i, field in enumerate(sum_fields):
+            aggregation_query = aggregation_query.sum(field, alias=f"sum_{i}")
+        for i, field in enumerate(avg_fields):
+            aggregation_query = aggregation_query.avg(field, alias=f"avg_{i}")
+        with report_missing_index():
+            results = aggregation_query.get(transaction=transaction)
+        values = {result.alias: result.value for result in results[0]}
+
+        count = int(values["count"])
+        # The client decodes a null average as 0.0, so the count tells an empty result
+        # apart. It only includes documents that have every aggregated field.
+        return Aggregates(
+            count=count,
+            sum={field: values[f"sum_{i}"] for i, field in enumerate(sum_fields)},
+            avg={
+                field: float(values[f"avg_{i}"]) if count else None
+                for i, field in enumerate(avg_fields)
+            },
+        )
 
     @staticmethod
     def _get_average(
@@ -883,16 +953,48 @@ class BareModel(pydantic.BaseModel, ABC):
         return cls._get_average(query, field, transaction)
 
     @classmethod
+    def aggregate_in_group(
+        cls,
+        filter_: Optional[Dict[str, Any]] = None,
+        *,
+        sum: Iterable[str] = (),
+        avg: Iterable[str] = (),
+        transaction: Optional[Transaction] = None,
+    ) -> Aggregates:
+        """
+        Returns the count, sums and averages of `aggregate()` over the models matching
+        a filter in the model's collection group, from one aggregation query. Like
+        `count_in_group()`, it includes documents whose path doesn't match the
+        collection template.
+
+        Example: `AnimalSurvey.aggregate_in_group({"status": "open"}, avg=["score"])`.
+
+        :param filter_: The filter criteria.
+        :param sum: Firestore field paths to sum.
+        :param avg: Firestore field paths to average.
+        :param transaction: Optional transaction to use.
+        :return: The count, and the sums and averages by field.
+        :raise ValueError: If more than 4 fields are summed and averaged.
+        """
+        sum = list(sum)
+        avg = list(avg)
+        query = cls._get_group_aggregation_query(filter_, *sum, *avg)
+        return cls._get_aggregates(query, sum, avg, transaction)
+
+    @classmethod
     def _get_group_aggregation_query(
-        cls, filter_: Optional[Dict[str, Any]], field: str
+        cls, filter_: Optional[Dict[str, Any]], *fields: str
     ) -> BaseQuery:
         """
-        Returns the collection group query for a sum or average of `field`.
+        Returns the collection group query for sums or averages of `fields`.
         """
         # Firestore rejects a sum or average with the path range unless the query is
         # ordered by the field. Ordering only skips documents without the field, which
         # the aggregation skips anyway.
-        return cls._get_group_query(filter_).order_by(field)
+        query = cls._get_group_query(filter_)
+        for field in dict.fromkeys(fields):
+            query = query.order_by(field)
+        return query
 
     @classmethod
     def _get_group_query(cls, filter_: Optional[Dict[str, Any]]) -> BaseQuery:

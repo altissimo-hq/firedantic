@@ -261,6 +261,20 @@ def test_sum_and_avg_in_group() -> None:
 
 
 
+def test_aggregate_in_group() -> None:
+    empty = AnimalSurvey.aggregate_in_group(sum=["score"], avg=["score"])
+    assert (empty.count, empty.sum, empty.avg) == (0, {"score": 0}, {"score": None})
+
+    _create_surveys()
+
+    result = AnimalSurvey.aggregate_in_group({"score": {">=": 12}}, sum=["score"], avg=["score"])
+    assert (result.count, result.sum, result.avg) == (4, {"score": 75}, {"score": 18.75})
+    # Surveys under sites/ and the top-level surveys are outside animals/
+    assert (SiteSurvey.aggregate_in_group(sum=["score"])).sum == {"score": 100}
+    assert (AnimalSurvey.aggregate_in_group()).count == 6
+
+
+
 def test_count_in_group_includes_mismatched_paths() -> None:
     _create_surveys()
     animal = (Animal.find())[0]

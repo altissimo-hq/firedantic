@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Literal, NamedTuple, Optional, Tuple, Union
@@ -32,6 +33,18 @@ IndexField = NamedTuple("IndexField", [("name", str), ("order", OrderDirection)]
 IndexDefinition = NamedTuple(
     "IndexDefinition", [("query_scope", str), ("fields", Tuple[IndexField, ...])]
 )
+
+
+@dataclass(frozen=True)
+class Aggregates:
+    """
+    Results of `aggregate()`. Firestore only includes the documents that have every
+    aggregated field, so `count` is the number of those.
+    """
+
+    count: int
+    sum: Dict[str, Union[int, float]]
+    avg: Dict[str, Optional[float]]
 
 
 FieldIndexDefinition = NamedTuple(
