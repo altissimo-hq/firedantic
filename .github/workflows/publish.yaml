@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - "*"
+  # Run by hand to publish the current main to TestPyPI, to check the package
+  # before a release
+  workflow_dispatch:
 
 jobs:
   build:
@@ -62,10 +65,10 @@ jobs:
   publish:
     name: Publish
     needs: build
-    # Only publish from the upstream repo; forks can't publish to PyPI
-    if: github.repository == 'ioxiocom/firedantic'
+    # Only publish tags from this repo, as altissimo-firedantic. Forks can't publish.
+    if: github.repository == 'altissimo-hq/firedantic' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    environment: PyPI
+    environment: pypi
     permissions:
       # this permission is mandatory for trusted publishing
       id-token: write
@@ -79,3 +82,25 @@ jobs:
       - name: Publish package to PyPI 🙌
         if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e #v1.13.0
+  publish-test:
+    name: Publish to TestPyPI
+    needs: build
+    if: github.repository == 'altissimo-hq/firedantic' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      # this permission is mandatory for trusted publishing
+      id-token: write
+    steps:
+      - name: Download build artifact ⬇️
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #v8.0.1
+        with:
+          name: package-dist
+          path: dist
+
+      - name: Publish package to TestPyPI 🧪
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e #v1.13.0
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # A version can only be uploaded once, so reruns skip it
+          skip-existing: true
