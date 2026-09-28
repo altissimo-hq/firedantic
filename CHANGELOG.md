@@ -7,6 +7,23 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-27
+
+### Added
+
+- Added `get_full_ordering()` to models, which returns the complete ordering of a
+  `find()` query: the given orderings, then unordered inequality fields by name, then
+  `__name__`, including inequality filters inside `op.OR` and `op.AND`. Paginators need
+  it to build cursors.
+
+### Fixed
+
+- `find()` and `find_in_group()` with an explicit `__name__` ordering and an inequality
+  filter on a field that isn't ordered work. Firestore adds that field after `__name__`
+  and rejects the query, so firedantic orders it before `__name__`.
+- `limit_to_last` and collection group paging with an inequality filter on `__name__` no
+  longer order by `__name__` twice, which Firestore rejects.
+
 ## [0.21.1] - 2026-09-27
 
 ### Fixed
@@ -508,7 +525,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.21.1...HEAD
+[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.22.0...HEAD
+[0.22.0]: https://github.com/altissimo-hq/firedantic/compare/0.21.1...0.22.0
 [0.21.1]: https://github.com/altissimo-hq/firedantic/compare/0.21.0...0.21.1
 [0.21.0]: https://github.com/altissimo-hq/firedantic/compare/0.20.0...0.21.0
 [0.20.0]: https://github.com/altissimo-hq/firedantic/compare/0.19.0...0.20.0

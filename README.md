@@ -194,6 +194,9 @@ next_page = Product.find(order_by=[("stock", Query.ASCENDING)], limit=20, start_
 To go back a page, pass the first model of the current page as `end_before` with
 `limit_to_last`, which returns the last results before it, still in the query's order.
 `start_at` and `end_at` include the cursor document instead of stopping next to it.
+`limit_to_last` runs the query in reverse, and the Firestore emulator can't scan by
+document ID alone in descending order, so on the emulator it needs an `order_by` field
+or an inequality filter.
 
 ```python
 previous_page = Product.find(
