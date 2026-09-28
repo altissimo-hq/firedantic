@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-27
+
 ### Added
 
 - Added `get_full_ordering()` to models, which returns the complete ordering of a
@@ -523,7 +525,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.21.1...HEAD
+[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.22.0...HEAD
+[0.22.0]: https://github.com/altissimo-hq/firedantic/compare/0.21.1...0.22.0
 [0.21.1]: https://github.com/altissimo-hq/firedantic/compare/0.21.0...0.21.1
 [0.21.0]: https://github.com/altissimo-hq/firedantic/compare/0.20.0...0.21.0
 [0.20.0]: https://github.com/altissimo-hq/firedantic/compare/0.19.0...0.20.0
