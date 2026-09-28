@@ -2,7 +2,7 @@
 # Published as altissimo-firedantic, since firedantic on PyPI is the upstream project.
 # The package, and so the import name, is still firedantic.
 name = "altissimo-firedantic"
-version = "0.22.3"
+version = "0.22.4"
 description = "Pydantic base models for Firestore. Maintained fork of ioxiocom/firedantic."
 authors = ["IOXIO Ltd", "Altissimo LLC"]
 maintainers = ["Altissimo LLC"]

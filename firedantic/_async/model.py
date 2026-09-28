@@ -591,6 +591,27 @@ class AsyncBareModel(pydantic.BaseModel, ABC):
             self._validate_document_id(doc_id)
         return getattr(self, self.__document_id__, None)
 
+    def require_document_id(self) -> str:
+        """
+        Returns the document ID of a saved or loaded model as a `str`.
+
+        The ID field is `Optional`, since a new model gets its ID when it's saved, so
+        type checkers don't know it's set on models that were saved or loaded. Use
+        this instead of `.id` where a `str` is needed, e.g.
+        `Talk.get_by_id(talk.require_document_id())`, instead of an `assert` first.
+        It only reads the ID, without a request.
+
+        :raise ModelNotFoundError: If the model has no ID yet, e.g. it hasn't been saved.
+        :raise DocumentIDError: If the ID is not valid.
+        """
+        doc_id = self.get_document_id()
+        if doc_id is None:
+            raise ModelNotFoundError(
+                f"{type(self).__name__} has no {self.__document_id__} yet, since it "
+                "hasn't been saved"
+            )
+        return doc_id
+
     @classmethod
     def _get_document_id_key(cls) -> str:
         """

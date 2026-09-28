@@ -3,7 +3,7 @@ Typed usage that must pass `mypy --strict`, checked by test_typing.py. It is onl
 type checked, never run.
 """
 
-from typing import List
+from typing import List, Optional
 
 from typing_extensions import assert_type
 
@@ -45,6 +45,9 @@ async def use_async(event: Event) -> None:
 
     talk = talks(title="Typed")
     await talk.save()
+    # The ID field is Optional, require_document_id() gives a str
+    assert_type(talk.id, Optional[str])
+    assert_type(await talks.get_by_id(talk.require_document_id()), Talk)
     # A sub-model can be the parent of another sub-model
     assert_type(Vote.model_for(talk)(score=5), Vote)
 

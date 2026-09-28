@@ -7,6 +7,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.22.4] - 2026-09-28
+
+### Added
+
+- Added `require_document_id()` to models, which returns the document ID as a `str`, or
+  raises `ModelNotFoundError` if the model hasn't been saved. The ID field is
+  `Optional`, so this saves an `assert` wherever a saved or loaded model's ID is passed
+  on as a `str`.
+
 ## [0.22.3] - 2026-09-28
 
 ### Fixed
@@ -558,7 +567,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.22.3...HEAD
+[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.22.4...HEAD
+[0.22.4]: https://github.com/altissimo-hq/firedantic/compare/0.22.3...0.22.4
 [0.22.3]: https://github.com/altissimo-hq/firedantic/compare/0.22.2...0.22.3
 [0.22.2]: https://github.com/altissimo-hq/firedantic/compare/0.22.1...0.22.2
 [0.22.1]: https://github.com/altissimo-hq/firedantic/compare/0.22.0...0.22.1
