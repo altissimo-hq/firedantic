@@ -8,7 +8,7 @@ from google.cloud.firestore_v1 import DELETE_FIELD, SERVER_TIMESTAMP, ArrayUnion
 from google.cloud.firestore_v1._helpers import encode_dict
 from google.cloud.firestore_v1.document import DocumentReference
 from google.cloud.firestore_v1.vector import Vector
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, Secret, SecretBytes, SecretStr
 
 from firedantic import to_firestore_value
 
@@ -73,3 +73,11 @@ def test_firestore_accepts_converted_values() -> None:
         "venues": [Venue(url=HttpUrl("https://x.org"), opened=date(2020, 1, 2))],
     }
     encode_dict(to_firestore_value(value))
+
+
+def test_secrets_are_stored_as_their_value() -> None:
+    # pydantic's JSON form of a secret is "**********", which would lose the value
+    assert to_firestore_value(SecretStr("hunter2")) == "hunter2"
+    assert to_firestore_value(SecretBytes(b"k3y")) == b"k3y"
+    assert to_firestore_value(Secret[date](date(2026, 1, 2))) == "2026-01-02"
+    assert to_firestore_value({"nested": [SecretStr("a")]}) == {"nested": ["a"]}

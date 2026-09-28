@@ -298,13 +298,18 @@ Firestore stores strings, numbers, booleans, bytes, datetimes, maps, arrays, geo
 document references and vectors. firedantic converts other values when it writes a model
 and in filter values, so pydantic types work as fields:
 
-| Type                    | Stored as                                           |
-| ----------------------- | --------------------------------------------------- |
-| `Enum`                  | its value                                           |
-| `date`                  | ISO string, e.g. `"2026-10-01"`, which sorts        |
-| `Decimal`               | exact string, e.g. `"12.50"`                        |
-| `timedelta`             | total seconds, e.g. `2700.0`                        |
-| `UUID`, `HttpUrl`, etc. | pydantic's JSON form, e.g. `"https://example.com/"` |
+| Type                                      | Stored as                                           |
+| ----------------------------------------- | --------------------------------------------------- |
+| `Enum`                                    | its value                                           |
+| `date`                                    | ISO string, e.g. `"2026-10-01"`, which sorts        |
+| `Decimal`                                 | exact string, e.g. `"12.50"`                        |
+| `timedelta`                               | total seconds, e.g. `2700.0`                        |
+| `UUID`, `HttpUrl`, etc.                   | pydantic's JSON form, e.g. `"https://example.com/"` |
+| `SecretStr`, `SecretBytes`, `Secret[...]` | the secret value, in plain text                     |
+
+The secret types only hide values in `repr()` and logs, so secrets are stored as plain
+text like any other value. Use Firestore's security rules, or encrypt the value
+yourself, to protect it.
 
 They all read back into the model. `Decimal` strings don't sort as numbers, so range
 filters and ordering on a `Decimal` field don't work. Store money as integer cents, or

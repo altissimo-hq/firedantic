@@ -13,7 +13,17 @@ from google.cloud.firestore import Query, async_transactional
 from google.cloud.firestore_admin_v1.types import Index
 from google.cloud.firestore_v1 import DELETE_FIELD, ArrayUnion, Increment
 from google.cloud.firestore_v1.async_transaction import AsyncTransaction
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError, field_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    Secret,
+    SecretBytes,
+    SecretStr,
+    ValidationError,
+    field_serializer,
+)
 
 import firedantic.operators as op
 from firedantic import (
@@ -612,6 +622,46 @@ async def test_filter_pydantic_types() -> None:
     assert await find_days({"budget": Decimal("12.50")}) == [early.day, late.day]
     assert await find_days({op.OR: [{"format": Format.IN_PERSON}, {"uid": UUID(int=2)}]}) == [late.day]
     assert await Event.count({"day": {op.LT: date(2026, 9, 15)}}) == 1
+
+
+class Account(AsyncModel):
+    __collection__ = "accounts"
+    name: str
+    password: SecretStr
+    key: SecretBytes
+    renewal: Secret[date]
+
+
+@pytest.mark.asyncio
+async def test_secrets_round_trip() -> None:
+    account = Account(
+        name="a",
+        password=SecretStr("hunter2"),
+        key=SecretBytes(b"k3y"),
+        renewal=Secret[date](date(2026, 1, 2)),
+    )
+    await account.save()
+    assert account.id
+
+    stored = await get_stored_data(account)
+    assert stored == {"name": "a", "password": "hunter2", "key": b"k3y", "renewal": "2026-01-02"}
+    loaded = await Account.get_by_id(account.id)
+    assert loaded.password.get_secret_value() == "hunter2"
+    assert loaded.key.get_secret_value() == b"k3y"
+    assert loaded.renewal.get_secret_value() == date(2026, 1, 2)
+    # The model still hides them
+    assert "hunter2" not in repr(loaded)
+
+    loaded.password = SecretStr("changed")
+    await loaded.update("password")
+    await loaded.update({"key": SecretBytes(b"new")})
+    stored = await get_stored_data(account)
+    assert stored is not None
+    assert (stored["password"], stored["key"]) == ("changed", b"new")
+
+    # Filters compare against the stored value
+    assert [a.id for a in await Account.find({"password": SecretStr("changed")})] == [account.id]
+    assert await Account.count({"password": "changed"}) == 1
 
 
 class TimestampEvent(AsyncModel):
