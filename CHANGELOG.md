@@ -7,6 +7,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- `model_for()` on sub-models and subcollections has type annotations, so it returns the
+  sub-model's class (e.g. `type[Talk]`) instead of `Any`, and strict type checkers no
+  longer report it as an untyped call.
+- The model settings `__collection__`, `__document_id__`, `__db_config__`,
+  `__ttl_field__`, `__composite_indexes__`, `__field_indexes__`, `__collection_group__`,
+  `__discriminator__` and `__collection_cls__` are declared as `ClassVar`, so type
+  checkers no longer treat them as model fields. Before, a typed sub-model class
+  required `__document_id__` and `__collection_cls__` arguments.
+
 ## [0.22.0] - 2026-09-27
 
 ### Added
