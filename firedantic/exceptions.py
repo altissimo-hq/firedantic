@@ -2,6 +2,15 @@ from typing import Any, Dict, Optional
 
 from google.api_core.exceptions import FailedPrecondition
 
+__all__ = [
+    "CollectionNotDefined",
+    "DocumentChangedError",
+    "InvalidDocumentID",
+    "MissingIndexError",
+    "ModelError",
+    "ModelNotFoundError",
+]
+
 
 class ModelError(Exception):
     """Generic model error class."""
