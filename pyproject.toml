@@ -1,12 +1,31 @@
 [tool.poetry]
-name = "firedantic"
+# Published as altissimo-firedantic, since firedantic on PyPI is the upstream project.
+# The package, and so the import name, is still firedantic.
+name = "altissimo-firedantic"
 version = "0.22.1"
-description = "Pydantic base models for Firestore"
+description = "Pydantic base models for Firestore. Maintained fork of ioxiocom/firedantic."
 authors = ["IOXIO Ltd", "Altissimo LLC"]
+maintainers = ["Altissimo LLC"]
 license = "BSD-3-Clause"
 readme = "README.md"
+homepage = "https://github.com/altissimo-hq/firedantic"
 repository = "https://github.com/altissimo-hq/firedantic"
+keywords = ["firestore", "pydantic", "orm", "google-cloud", "firebase"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Pydantic :: 2",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "Typing :: Typed",
+]
 packages = [{ include = "firedantic", from = "." }]
+# The tests need pytest and the Firestore emulator, so they stay in the repository
+exclude = ["firedantic/tests"]
+
+[tool.poetry.urls]
+"Changelog" = "https://github.com/altissimo-hq/firedantic/blob/main/CHANGELOG.md"
+"Issues" = "https://github.com/altissimo-hq/firedantic/issues"
+"Upstream" = "https://github.com/ioxiocom/firedantic"
 
 [tool.poetry.scripts]
 firedantic = "firedantic.__main__:main"

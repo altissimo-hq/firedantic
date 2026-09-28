@@ -1,9 +1,8 @@
 # Firedantic
 
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/ioxiocom/firedantic/publish.yaml)](https://github.com/ioxiocom/firedantic/actions/workflows/publish.yaml)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![PyPI](https://img.shields.io/pypi/v/firedantic)](https://pypi.org/project/firedantic/)
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/firedantic)](https://pypi.org/project/firedantic/)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/altissimo-hq/firedantic/publish.yaml)](https://github.com/altissimo-hq/firedantic/actions/workflows/publish.yaml)
+[![PyPI](https://img.shields.io/pypi/v/altissimo-firedantic)](https://pypi.org/project/altissimo-firedantic/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/altissimo-firedantic)](https://pypi.org/project/altissimo-firedantic/)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 > **About this fork:** This is the actively maintained fork of firedantic under
@@ -17,11 +16,21 @@ Database models for Firestore using Pydantic base models.
 
 ## Installation
 
-The package is available on PyPI:
+This fork is published on PyPI as `altissimo-firedantic`, since `firedantic` there is
+the upstream project. The import name is still `firedantic`, so code written for
+upstream firedantic works unchanged:
 
 ```bash
-pip install firedantic
+pip install altissimo-firedantic
 ```
+
+```python
+from firedantic import Model
+```
+
+Don't install `altissimo-firedantic` and upstream `firedantic` in the same environment:
+both install the `firedantic` package, and whichever is installed last overwrites the
+other. Replace `firedantic` in your dependencies with `altissimo-firedantic`.
 
 ## Quick overview
 
