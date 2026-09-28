@@ -169,6 +169,10 @@ Product.count({"stock": {op.GTE: 3}})
 Product.sum("stock")
 Product.avg("unit_value", {"stock": {op.GTE: 3}})
 
+# Count, sums and averages from one query
+result = Product.aggregate({"stock": {op.GTE: 3}}, sum=["stock"], avg=["unit_value"])
+print(result.count, result.sum["stock"], result.avg["unit_value"])
+
 # Fetch several documents by ID in one request; missing ones are left out
 Product.get_by_ids(["id-1", "id-2"])
 ```
@@ -195,6 +199,12 @@ be nested. Firestore's
 [limits on OR queries](https://firebase.google.com/docs/firestore/query-data/queries#limits_on_or_queries)
 apply. OR filters work in all methods that take a filter, including `count()`, `sum()`,
 `avg()` and the collection group methods.
+
+`aggregate()` returns the count and the sums and averages of several fields from one
+query. Firestore only includes the documents that have every aggregated field, so its
+count can be lower than `count()`, and the sums and averages are over those documents.
+Firestore allows up to 4 sums and averages next to the count. `aggregate_in_group()`
+does the same for a collection group.
 
 The query operators are found at
 [https://firebase.google.com/docs/firestore/query-data/queries#query_operators](https://firebase.google.com/docs/firestore/query-data/queries#query_operators).
@@ -846,6 +856,7 @@ Firedantic has basic support for
 The following methods can be used in a transaction for both **sync** and **async**
 models:
 
+- `Model.aggregate(transaction=transaction)`
 - `Model.avg(field, transaction=transaction)`
 - `Model.count(transaction=transaction)`
 - `Model.create(transaction=transaction)`

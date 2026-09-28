@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError, fie
 
 import firedantic.operators as op
 from firedantic import (
+    Aggregates,
     AsyncModel,
     AsyncSubCollection,
     AsyncSubModel,
@@ -171,6 +172,55 @@ async def test_sum_and_avg_paths() -> None:
     assert await Counter.avg("totalCount") == 2.0
     assert await Counter.avg("optional") == 1.0
     assert await Counter.avg("missing") is None
+
+
+@pytest.mark.asyncio
+async def test_aggregate(create_product) -> None:
+    assert await Product.aggregate(sum=["stock"], avg=["price"]) == Aggregates(
+        count=0, sum={"stock": 0}, avg={"price": None}
+    )
+
+    for p in TEST_PRODUCTS:
+        await create_product(**p, price=2.0)
+
+    result = await Product.aggregate({"stock": {op.GTE: 1}}, sum=["stock", "price"], avg=["stock"])
+    assert result.count == 3
+    assert result.sum == {"stock": 6, "price": 6.0}
+    assert result.avg == {"stock": 2.0}
+    assert (await Product.aggregate()).count == 4
+
+
+@pytest.mark.asyncio
+async def test_aggregate_only_includes_documents_with_every_field() -> None:
+    await Counter(totalCount=1, optional=10).save()
+    await Counter(totalCount=3).save(exclude_none=True)
+
+    # The second counter has no "optional" field, so it's left out of everything
+    result = await Counter.aggregate(sum=["totalCount"], avg=["optional"])
+    assert result == Aggregates(count=1, sum={"totalCount": 1}, avg={"optional": 10.0})
+    assert await Counter.count() == 2
+
+    empty = await Counter.aggregate(sum=["totalCount"], avg=["missing"])
+    assert empty.count == 0
+    assert empty.avg == {"missing": None}
+
+
+@pytest.mark.asyncio
+async def test_aggregate_limits() -> None:
+    with pytest.raises(ValueError):
+        await Product.aggregate(sum=["a", "b", "c"], avg=["d", "e"])
+
+
+@pytest.mark.asyncio
+async def test_aggregate_in_transaction(create_product) -> None:
+    await create_product(stock=2)
+    await create_product(stock=4)
+
+    @async_transactional
+    async def read_in_transaction(transaction: AsyncTransaction):
+        return await Product.aggregate(avg=["stock"], transaction=transaction)
+
+    assert (await read_in_transaction(get_async_transaction())).avg == {"stock": 3.0}
 
 
 @pytest.mark.asyncio
