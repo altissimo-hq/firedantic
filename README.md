@@ -187,6 +187,16 @@ page = Product.find(order_by=[("stock", Query.ASCENDING)], limit=20)
 next_page = Product.find(order_by=[("stock", Query.ASCENDING)], limit=20, start_after=page[-1])
 ```
 
+To go back a page, pass the first model of the current page as `end_before` with
+`limit_to_last`, which returns the last results before it, still in the query's order.
+`start_at` and `end_at` include the cursor document instead of stopping next to it.
+
+```python
+previous_page = Product.find(
+    order_by=[("stock", Query.ASCENDING)], limit_to_last=20, end_before=page[0]
+)
+```
+
 `sum()` and `avg()` take a Firestore field path, so they use field aliases and dots for
 nested fields. Values that aren't numbers are ignored. The sum of no values is 0, and
 the average is `None` if no matching document has the field. If the field exists but has
@@ -453,8 +463,9 @@ average_score = await AnimalSurvey.avg_in_group("score")
 ### Pagination
 
 Like `find()`, `find_in_group()` takes the last model of the previous page as
-`start_after`. Its `get_document_path()` works too, but not its document ID, since the
-ID alone doesn't say which collection of the group the document is in:
+`start_after`, and the other cursors and `limit_to_last` too. Its `get_document_path()`
+works too, but not its document ID, since the ID alone doesn't say which collection of
+the group the document is in:
 
 ```python
 from google.cloud.firestore import Query

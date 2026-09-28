@@ -542,6 +542,11 @@ class BareModel(pydantic.BaseModel, ABC):
         offset: Optional[int] = None,
         start_after: Union["BareModel", str, DocumentSnapshot, None] = None,
         transaction: Optional[Transaction] = None,
+        *,
+        start_at: Union["BareModel", str, DocumentSnapshot, None] = None,
+        end_before: Union["BareModel", str, DocumentSnapshot, None] = None,
+        end_at: Union["BareModel", str, DocumentSnapshot, None] = None,
+        limit_to_last: Optional[int] = None,
     ) -> List[TBareModel]:
         """
         Returns a list of models from the database based on a filter.
@@ -561,25 +566,39 @@ class BareModel(pydantic.BaseModel, ABC):
         :param start_after: Cursor to continue from: a model returned by a previous
             call, its document ID or `get_document_path()`, or a document snapshot.
         :param transaction: Optional transaction to use.
+        :param start_at: Cursor to start from, including it. Takes the same values as
+            `start_after`.
+        :param end_before: Cursor to stop before. Takes the same values as `start_after`.
+        :param end_at: Cursor to stop at, including it. Takes the same values as
+            `start_after`.
+        :param limit_to_last: Return only the last n results, in the query's order. With
+            `end_before` set to the first model of a page, this returns the page before
+            it. Can't be used with `limit` or `offset`.
         :return: List of found models.
         """
-        query = cls._get_query(filter_)
-
-        if order_by is not None:
-            for field, direction in order_by:
-                query = query.order_by(field, direction=direction)  # type: ignore
+        cursors = [
+            cls._get_cursor_path(cursor) for cursor in (start_at, start_after, end_at, end_before)
+        ]
+        query, start, limit, reverse = cls._apply_ordering(
+            cls._get_query(filter_),
+            filter_,
+            order_by,
+            limit,
+            limit_to_last,
+            offset,
+            *cursors,
+            transaction=transaction,
+            full_ordering=False,
+        )
+        if start is not None:
+            query = getattr(query, start[0])(start[1])
         if limit is not None:
             query = query.limit(limit)  # type: ignore
         if offset is not None:
             query = query.offset(offset)  # type: ignore
-        if start_after is not None:
-            if isinstance(start_after, str) and "/" not in start_after:
-                start_after = cls._get_col_ref().document(start_after).path
-            cursor = cls._get_cursor_snapshot(start_after, transaction)
-            query = query.start_after(cursor)  # type: ignore
 
         with report_missing_index():
-            return [
+            models = [
                 cls._model_from_data(doc_id, doc_dict)
                 for doc_id, doc_dict in (
                     (doc.id, doc.to_dict())
@@ -587,6 +606,9 @@ class BareModel(pydantic.BaseModel, ABC):
                 )
                 if doc_dict is not None
             ]
+        if reverse:
+            models.reverse()
+        return models
 
     @classmethod
     def count(
@@ -792,6 +814,11 @@ class BareModel(pydantic.BaseModel, ABC):
         offset: Optional[int] = None,
         start_after: Union["BareModel", str, DocumentSnapshot, None] = None,
         transaction: Optional[Transaction] = None,
+        *,
+        start_at: Union["BareModel", str, DocumentSnapshot, None] = None,
+        end_before: Union["BareModel", str, DocumentSnapshot, None] = None,
+        end_at: Union["BareModel", str, DocumentSnapshot, None] = None,
+        limit_to_last: Optional[int] = None,
     ) -> List[TBareModel]:
         """
         Returns a list of models from all collections in the model's collection group.
@@ -819,34 +846,44 @@ class BareModel(pydantic.BaseModel, ABC):
         :param start_after: Cursor to continue from: a model returned by a previous
             call, its `get_document_path()`, or a document snapshot.
         :param transaction: Optional transaction to use.
+        :param start_at: Cursor to start from, including it. Takes the same values as
+            `start_after`.
+        :param end_before: Cursor to stop before. Takes the same values as `start_after`.
+        :param end_at: Cursor to stop at, including it. Takes the same values as
+            `start_after`.
+        :param limit_to_last: Return only the last n results, in the query's order. With
+            `end_before` set to the first model of a page, this returns the page before
+            it. Can't be used with `limit` or `offset`.
         :return: List of found models.
         """
-        query = cls._get_group_query(filter_)
-
-        if order_by is not None:
-            for field, direction in order_by:
-                query = query.order_by(field, direction=direction)  # type: ignore
-
-        if cls._get_collection_group_path_range() is not None:
-            # The Firestore client adds the implicit orderings for cursors itself, but
-            # adds __name__ once per filter on it, which the server rejects
-            ordered = {field for field, _ in order_by or []}
-            direction = order_by[-1][1] if order_by else "ASCENDING"
-            for field in sorted(cls._get_inequality_fields(filter_) - ordered):
-                query = query.order_by(field, direction=direction)  # type: ignore
-            query = query.order_by(DOCUMENT_ID, direction=direction)  # type: ignore
-
-        cursor = None
-        if start_after is not None:
-            cursor = cls._get_cursor_snapshot(start_after, transaction)
+        # The Firestore client adds the implicit orderings for cursors itself, but adds
+        # __name__ once per filter on it, which the server rejects, so with the path
+        # range the query gets all its orderings explicitly
+        query, start, limit, reverse = cls._apply_ordering(
+            cls._get_group_query(filter_),
+            filter_,
+            order_by,
+            limit,
+            limit_to_last,
+            offset,
+            start_at,
+            start_after,
+            end_at,
+            end_before,
+            transaction=transaction,
+            full_ordering=cls._get_collection_group_path_range() is not None,
+        )
 
         path_pattern = cls._get_collection_group_path_pattern()
         models: List[TBareModel] = []
+        cursor = None
         first_round = True
         while True:
             page_query = query
             if cursor is not None:
                 page_query = page_query.start_after(cursor)
+            elif start is not None:
+                page_query = getattr(page_query, start[0])(start[1])
             requested = None if limit is None else limit - len(models)
             if requested is not None:
                 page_query = page_query.limit(requested)  # type: ignore
@@ -879,6 +916,8 @@ class BareModel(pydantic.BaseModel, ABC):
             # Fetch more only when skipped documents left the page short and the
             # query may still have more results
             if requested is None or skipped == 0 or fetched < requested:
+                if reverse:
+                    models.reverse()
                 return models
 
     @classmethod
@@ -1041,6 +1080,96 @@ class BareModel(pydantic.BaseModel, ABC):
             return models[0]
         except IndexError as e:
             raise ModelNotFoundError(f"No '{cls.__name__}' found") from e
+
+    @classmethod
+    def _apply_ordering(
+        cls,
+        query: Any,
+        filter_: Optional[Dict[str, Any]],
+        order_by: Optional[_OrderBy],
+        limit: Optional[int],
+        limit_to_last: Optional[int],
+        offset: Optional[int],
+        start_at: Any,
+        start_after: Any,
+        end_at: Any,
+        end_before: Any,
+        *,
+        transaction: Optional[Transaction],
+        full_ordering: bool,
+    ) -> Tuple[Any, Optional[Tuple[str, DocumentSnapshot]], Optional[int], bool]:
+        """
+        Adds the orderings and the end cursor to a query. With `limit_to_last` the
+        query is reversed, so the first results of the reversed query are the last
+        ones, and the cursors swap places.
+
+        :return: The query, the start cursor as (method name, snapshot) for the caller
+            to add, the limit to use, and whether the results must be reversed.
+        :raise ValueError: If options that can't be combined are.
+        """
+        if start_at is not None and start_after is not None:
+            raise ValueError("Pass either start_at or start_after, not both")
+        if end_at is not None and end_before is not None:
+            raise ValueError("Pass either end_at or end_before, not both")
+        reverse = limit_to_last is not None
+        if reverse and (limit is not None or offset is not None):
+            raise ValueError("limit_to_last can't be used with limit or offset")
+
+        ordering: List[Tuple[str, str]] = list(order_by or [])
+        if full_ordering or reverse:
+            # Reversing needs every ordering Firestore would add implicitly
+            ordering = cls._get_full_ordering(filter_, ordering)
+        start = ("start_at", start_at) if start_at is not None else ("start_after", start_after)
+        end = ("end_at", end_at) if end_at is not None else ("end_before", end_before)
+        if reverse:
+            ordering = [
+                (field, "DESCENDING" if direction == "ASCENDING" else "ASCENDING")
+                for field, direction in ordering
+            ]
+            swapped = {
+                "start_at": "end_at",
+                "start_after": "end_before",
+                "end_at": "start_at",
+                "end_before": "start_after",
+            }
+            start, end = (swapped[end[0]], end[1]), (swapped[start[0]], start[1])
+
+        for field, direction in ordering:
+            query = query.order_by(field, direction=direction)
+        if end[1] is not None:
+            query = getattr(query, end[0])(cls._get_cursor_snapshot(end[1], transaction))
+        start_cursor = None
+        if start[1] is not None:
+            start_cursor = (start[0], cls._get_cursor_snapshot(start[1], transaction))
+        return query, start_cursor, limit_to_last if reverse else limit, reverse
+
+    @classmethod
+    def _get_full_ordering(
+        cls, filter_: Optional[Dict[str, Any]], order_by: List[Tuple[str, str]]
+    ) -> List[Tuple[str, str]]:
+        """
+        Returns the orderings Firestore uses for a query: the given ones, then the
+        fields of inequality filters by name, then the document ID, in the direction of
+        the last given ordering.
+        """
+        ordered = {field for field, _ in order_by}
+        direction = order_by[-1][1] if order_by else "ASCENDING"
+        ordering = list(order_by)
+        for field in sorted(cls._get_inequality_fields(filter_) - ordered):
+            ordering.append((field, direction))
+        if DOCUMENT_ID not in ordered:
+            ordering.append((DOCUMENT_ID, direction))
+        return ordering
+
+    @classmethod
+    def _get_cursor_path(cls, cursor: Any) -> Any:
+        """
+        Returns the document path for a cursor given as a document ID in the model's
+        collection, and other cursors as they are.
+        """
+        if isinstance(cursor, str) and "/" not in cursor:
+            return cls._get_col_ref().document(cursor).path
+        return cursor
 
     @classmethod
     def _get_cursor_snapshot(
