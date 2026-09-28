@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-09-28
+
 ### Fixed
 
 - `model_for()` on sub-models and subcollections has type annotations, so it returns the
@@ -536,7 +538,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.22.0...HEAD
+[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.22.1...HEAD
+[0.22.1]: https://github.com/altissimo-hq/firedantic/compare/0.22.0...0.22.1
 [0.22.0]: https://github.com/altissimo-hq/firedantic/compare/0.21.1...0.22.0
 [0.21.1]: https://github.com/altissimo-hq/firedantic/compare/0.21.0...0.21.1
 [0.21.0]: https://github.com/altissimo-hq/firedantic/compare/0.20.0...0.21.0
