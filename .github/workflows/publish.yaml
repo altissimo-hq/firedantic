@@ -68,7 +68,7 @@ jobs:
     # Only publish tags from this repo, as altissimo-firedantic. Forks can't publish.
     if: github.repository == 'altissimo-hq/firedantic' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    environment: PyPI
+    environment: pypi
     permissions:
       # this permission is mandatory for trusted publishing
       id-token: write
@@ -87,7 +87,7 @@ jobs:
     needs: build
     if: github.repository == 'altissimo-hq/firedantic' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    environment: TestPyPI
+    environment: testpypi
     permissions:
       # this permission is mandatory for trusted publishing
       id-token: write
