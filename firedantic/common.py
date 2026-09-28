@@ -1,8 +1,29 @@
+from datetime import datetime, timedelta
+from enum import Enum
 from typing import Any, Dict, List, Literal, NamedTuple, Optional, Tuple, Union
 
 import pydantic
+from google.cloud.firestore_v1._helpers import GeoPoint
+from google.cloud.firestore_v1.base_document import BaseDocumentReference
 from google.cloud.firestore_v1.field_path import FieldPath
 from google.cloud.firestore_v1.transforms import Sentinel, _NumericValue, _ValueList
+from google.cloud.firestore_v1.vector import Vector
+from pydantic_core import to_jsonable_python
+
+# Values the Firestore client stores as they are
+_NATIVE_TYPES = (
+    bool,
+    int,
+    float,
+    str,
+    bytes,
+    datetime,
+    GeoPoint,
+    BaseDocumentReference,
+    Vector,
+    Sentinel,
+    _NumericValue,
+)
 
 OrderDirection = Union[Literal["ASCENDING"], Literal["DESCENDING"]]
 
@@ -91,6 +112,40 @@ def quote_field_names(data: Dict[str, Any]) -> Dict[str, Any]:
     :return: The same data keyed by field paths.
     """
     return {FieldPath(key).to_api_repr(): value for key, value in data.items()}
+
+
+def to_firestore_value(value: Any) -> Any:
+    """
+    Converts a value to one the Firestore client can store, the way firedantic stores
+    model data and filter values.
+
+    Values Firestore stores natively, like strings, numbers, datetimes, document
+    references and write transforms, are kept. Dicts and lists are converted item by
+    item, and sets and tuples become lists. Enums are stored as their value, timedeltas
+    as their total seconds, so they can be filtered and ordered by, and anything else
+    like `date`, `Decimal`, `UUID` or `HttpUrl` as pydantic's JSON form, which reads
+    back into the model. ISO date strings sort correctly, but `Decimal` strings don't
+    sort as numbers.
+
+    :param value: The value to convert.
+    :return: The value to store.
+    """
+    if isinstance(value, Enum):
+        return to_firestore_value(value.value)
+    if value is None or isinstance(value, _NATIVE_TYPES):
+        return value
+    if isinstance(value, _ValueList):
+        # ArrayUnion and ArrayRemove
+        return type(value)([to_firestore_value(item) for item in value.values])
+    if isinstance(value, dict):
+        return {key: to_firestore_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [to_firestore_value(item) for item in value]
+    if isinstance(value, timedelta):
+        return value.total_seconds()
+    if isinstance(value, pydantic.BaseModel):
+        return to_firestore_value(value.model_dump(by_alias=True))
+    return to_firestore_value(to_jsonable_python(value))
 
 
 def is_transform(value: Any) -> bool:

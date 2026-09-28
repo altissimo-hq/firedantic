@@ -7,6 +7,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Added `to_firestore_value()`, which converts a value to one Firestore can store the
+  way firedantic stores model data and filter values.
+
+### Fixed
+
+- Models with fields of types Firestore can't store, like `HttpUrl`, `date`, `Decimal`,
+  `Enum`, `UUID` or `timedelta`, can be saved, updated and filtered on. Enums are stored
+  as their value, timedeltas as total seconds and other types as pydantic's JSON form,
+  e.g. dates as ISO strings and decimals as exact strings. They read back into the
+  model. Writes of these types failed before, so no stored data changes.
+
 ## [0.19.0] - 2026-09-27
 
 ### Added
