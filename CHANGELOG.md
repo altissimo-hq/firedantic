@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-09-27
+
 ### Fixed
 
 - The package declares `__all__`, so type checkers that don't allow implicit re-exports,
@@ -506,7 +508,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.21.0...HEAD
+[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.21.1...HEAD
+[0.21.1]: https://github.com/altissimo-hq/firedantic/compare/0.21.0...0.21.1
 [0.21.0]: https://github.com/altissimo-hq/firedantic/compare/0.20.0...0.21.0
 [0.20.0]: https://github.com/altissimo-hq/firedantic/compare/0.19.0...0.20.0
 [0.19.0]: https://github.com/altissimo-hq/firedantic/compare/0.18.0...0.19.0
