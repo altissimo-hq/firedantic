@@ -54,3 +54,55 @@ from firedantic.configurations import (
 )
 from firedantic.exceptions import *
 from firedantic.utils import get_all_subclasses
+
+# Type checkers with implicit re-exports turned off, like mypy --strict, only see the
+# names listed here as part of the package
+__all__ = [
+    # Models
+    "AsyncBareModel",
+    "AsyncBareSubCollection",
+    "AsyncBareSubModel",
+    "AsyncModel",
+    "AsyncSubCollection",
+    "AsyncSubModel",
+    "BareModel",
+    "BareSubCollection",
+    "BareSubModel",
+    "Model",
+    "SubCollection",
+    "SubModel",
+    # Configuration
+    "CONFIGURATIONS",
+    "ConfigItem",
+    "Configuration",
+    "configure",
+    "get_async_batch",
+    "get_async_transaction",
+    "get_batch",
+    "get_transaction",
+    # Indexes and TTL policies
+    "async_set_up_composite_indexes",
+    "async_set_up_composite_indexes_and_ttl_policies",
+    "async_set_up_field_indexes",
+    "async_set_up_ttl_policies",
+    "set_up_composite_indexes",
+    "set_up_composite_indexes_and_ttl_policies",
+    "set_up_field_indexes",
+    "set_up_ttl_policies",
+    "collection_group_field_index",
+    "collection_group_index",
+    "collection_index",
+    # Helpers
+    "Aggregates",
+    "to_firestore_value",
+    "async_truncate_collection",
+    "truncate_collection",
+    "get_all_subclasses",
+    # Exceptions
+    "CollectionNotDefined",
+    "DocumentChangedError",
+    "InvalidDocumentID",
+    "MissingIndexError",
+    "ModelError",
+    "ModelNotFoundError",
+]
