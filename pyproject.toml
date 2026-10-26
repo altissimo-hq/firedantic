@@ -2,7 +2,7 @@
 # Published as altissimo-firedantic, since firedantic on PyPI is the upstream project.
 # The package, and so the import name, is still firedantic.
 name = "altissimo-firedantic"
-version = "0.22.4"
+version = "0.23.0"
 description = "Pydantic base models for Firestore. Maintained fork of ioxiocom/firedantic."
 authors = ["IOXIO Ltd", "Altissimo LLC"]
 maintainers = ["Altissimo LLC"]
@@ -31,7 +31,7 @@ exclude = ["firedantic/tests"]
 firedantic = "firedantic.__main__:main"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.11"
 pydantic = "^2.12.4"
 grpcio = "^1.70.0"
 google-cloud-firestore = "^2.20.0"
@@ -52,7 +52,7 @@ watchdog = "^6.0.0"
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 exclude = ["firedantic/tests/**", "integration_tests/**"]
 
 [tool.ruff.lint]
