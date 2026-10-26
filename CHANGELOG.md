@@ -7,6 +7,21 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-26
+
+### Removed
+
+- Python 3.10 support. Python 3.10 reached end of life in October 2026, and the fix for
+  vulnerabilities in `filelock`, a development dependency, needs Python 3.11 or later.
+  pip on Python 3.10 keeps installing 0.22.4. Upstream `firedantic` on PyPI still
+  supports Python 3.10.
+
+### Security
+
+- Updated development dependencies in `poetry.lock` with known vulnerabilities:
+  `certifi` 2026.10.23 (GHSA-6q48-6c7w-9gw2), `virtualenv` 21.14.13 and `filelock`
+  4.2.4.
+
 ## [0.22.4] - 2026-09-28
 
 ### Added
@@ -567,7 +582,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Update README.md
 - Update .gitignore
 
-[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.22.4...HEAD
+[unreleased]: https://github.com/altissimo-hq/firedantic/compare/0.23.0...HEAD
+[0.23.0]: https://github.com/altissimo-hq/firedantic/compare/0.22.4...0.23.0
 [0.22.4]: https://github.com/altissimo-hq/firedantic/compare/0.22.3...0.22.4
 [0.22.3]: https://github.com/altissimo-hq/firedantic/compare/0.22.2...0.22.3
 [0.22.2]: https://github.com/altissimo-hq/firedantic/compare/0.22.1...0.22.2

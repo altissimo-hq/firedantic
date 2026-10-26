@@ -1150,7 +1150,7 @@ PRs are welcome!
 
 - [Node 22](https://nodejs.org/en/download)
 - [Pre-commit](https://pre-commit.com/#install)
-- [Python 3.10+](https://wiki.python.org/moin/BeginnersGuide/Download)
+- [Python 3.11+](https://wiki.python.org/moin/BeginnersGuide/Download)
 - [Poetry](https://python-poetry.org/docs/#installation)
 - [Google Firebase Emulator Suite](https://firebase.google.com/docs/emulator-suite/install_and_configure#install_the_local_emulator_suite)
 
