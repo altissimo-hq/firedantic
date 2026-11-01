@@ -41,7 +41,7 @@ report_only = false
 sources = ["pyup", "gemnasium"]
 
 [tool.poetry.group.dev.dependencies]
-invoke = "^2.2.0"
+invoke = "^3.0.0"
 mypy = "^1.15.0"
 pre-commit = "^4.0.0"
 pytest = "^9.0.3"
